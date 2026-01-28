@@ -1,0 +1,126 @@
+{% extends 'core/base.html' %}
+
+{% block content %}
+<div class="d-flex justify-content-between align-items-center mb-4">
+    <h1 class="h3 mb-0">🏭 Plán výroby</h1>
+    <a href="/admin/core/objednavka/add/" class="btn btn-success btn-sm">➕ Nová zákazka</a>
+</div>
+
+<!-- ========================================== -->
+<!-- VERZIA PRE PC (Tabuľka) -->
+<!-- Zobrazí sa len na obrazovkách širších ako mobil -->
+<!-- ========================================== -->
+<div class="d-none d-md-block">
+    <div class="card shadow-sm">
+        <div class="card-body p-0">
+            <div class="table-responsive">
+                <table class="table table-hover mb-0 align-middle">
+                    <thead class="table-dark">
+                        <tr>
+                            <th>Termín</th>
+                            <th>Zákazka</th>
+                            <th>Zákazník</th>
+                            <th>Produkt</th>
+                            <th class="text-center">Množstvo</th>
+                            <th class="text-center">Stav</th>
+                            <th class="text-end">Akcia</th>
+                        </tr>
+                    </thead>
+                    <tbody>
+                        {% for obj in objednavky %}
+                        <tr class="{% if obj.stav == 'vyroba' %}table-warning{% endif %}">
+                            <td class="fw-bold text-danger">{{ obj.datum_pozadovane|date:"d.m.Y" }}</td>
+                            <td>
+                                <a href="{% url 'detail_zakazky' pk=obj.pk %}" class="text-decoration-none fw-bold">
+                                    #{{ obj.cislo_objednavky }}
+                                </a>
+                            </td>
+                            <td>{{ obj.zakaznik }}</td>
+                            <td>
+                                <div class="fw-bold">{{ obj.produkt.nazov }}</div>
+                                <small class="text-muted">{{ obj.produkt.cislo_dielu }}</small>
+                            </td>
+                            <td class="text-center h5 mb-0">{{ obj.mnozstvo }} ks</td>
+                            <td class="text-center">
+                                {% if obj.stav == 'nova' %}
+                                    <span class="badge bg-primary">Nová</span>
+                                {% elif obj.stav == 'vyroba' %}
+                                    <span class="badge bg-warning text-dark">Vo výrobe</span>
+                                {% elif obj.stav == 'pozastavene' %}
+                                    <span class="badge bg-secondary">Pozastavené</span>
+                                {% endif %}
+                            </td>
+                            <td class="text-end">
+                                <a href="/admin/core/objednavka/{{ obj.pk }}/change/" class="btn btn-outline-dark btn-sm">✏️</a>
+                            </td>
+                        </tr>
+                        {% empty %}
+                        <tr>
+                            <td colspan="7" class="text-center py-5">
+                                <h4 class="text-muted">🎉 Všetko je hotové!</h4>
+                                <p class="mb-0">Momentálne nie sú žiadne otvorené objednávky.</p>
+                            </td>
+                        </tr>
+                        {% endfor %}
+                    </tbody>
+                </table>
+            </div>
+        </div>
+    </div>
+</div>
+
+<!-- ========================================== -->
+<!-- VERZIA PRE MOBIL (Karty) -->
+<!-- Zobrazí sa len na malých obrazovkách -->
+<!-- ========================================== -->
+<div class="d-md-none">
+    {% for obj in objednavky %}
+    <div class="card mb-3 shadow-sm border-start border-4 {% if obj.stav == 'vyroba' %}border-warning{% else %}border-primary{% endif %}">
+        
+        <!-- Hlavička karty -->
+        <div class="card-header bg-white d-flex justify-content-between align-items-center py-2">
+            <span class="fw-bold text-dark">#{{ obj.cislo_objednavky }}</span>
+            <span class="badge {% if obj.stav == 'vyroba' %}bg-warning text-dark{% else %}bg-primary{% endif %}">
+                {{ obj.get_stav_display }}
+            </span>
+        </div>
+
+        <!-- Telo karty -->
+        <div class="card-body py-3">
+            <h5 class="card-title mb-1">{{ obj.zakaznik }}</h5>
+            
+            <div class="mb-3">
+                <span class="d-block fw-bold text-primary">{{ obj.produkt.nazov }}</span>
+                <small class="text-muted">{{ obj.produkt.cislo_dielu }}</small>
+            </div>
+
+            <div class="d-flex justify-content-between align-items-end border-top pt-2">
+                <div>
+                    <small class="text-muted d-block">Množstvo</small>
+                    <span class="h4 mb-0">{{ obj.mnozstvo }} ks</span>
+                </div>
+                <div class="text-end">
+                    <small class="text-muted d-block">Termín</small>
+                    <span class="fw-bold text-danger">📅 {{ obj.datum_pozadovane|date:"d.m." }}</span>
+                </div>
+            </div>
+        </div>
+
+        <!-- Pätička s tlačidlami -->
+        <div class="card-footer bg-light d-flex gap-2">
+            <a href="{% url 'detail_zakazky' pk=obj.pk %}" class="btn btn-primary flex-grow-1">
+                👁️ Detail
+            </a>
+            <a href="/admin/core/objednavka/{{ obj.pk }}/change/" class="btn btn-outline-secondary">
+                ✏️ Upraviť
+            </a>
+        </div>
+    </div>
+    {% empty %}
+    <div class="alert alert-success text-center py-4">
+        <h4>🎉 Hotovo!</h4>
+        <p>Žiadne aktívne zákazky.</p>
+    </div>
+    {% endfor %}
+</div>
+{% endblock %}

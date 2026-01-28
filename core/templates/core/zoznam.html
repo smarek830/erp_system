@@ -1,0 +1,92 @@
+{% extends 'core/base.html' %}
+
+{% block content %}
+<div class="d-flex justify-content-between align-items-center mb-4">
+    <h1 class="h3 mb-0">📦 Zoznam produktov</h1>
+    <a href="/admin/core/produkt/add/" class="btn btn-success btn-sm">➕ Pridať produkt</a>
+</div>
+
+<!-- ========================================== -->
+<!-- VERZIA PRE PC (Tabuľka) -->
+<!-- Zobrazí sa len na obrazovkách širších ako mobil (md a viac) -->
+<!-- ========================================== -->
+<div class="d-none d-md-block">
+    <div class="card shadow-sm">
+        <div class="card-body p-0">
+            <div class="table-responsive">
+                <table class="table table-hover mb-0 align-middle">
+                    <thead class="table-light">
+                        <tr>
+                            <th>Číslo dielu</th>
+                            <th>Názov</th>
+                            <th>Materiál</th>
+                            <th class="text-center">Spotreba</th>
+                            <th class="text-center">Norma</th>
+                            <th class="text-end">Akcia</th>
+                        </tr>
+                    </thead>
+                    <tbody>
+                        {% for produkt in produkty %}
+                        <tr>
+                            <td class="fw-bold text-primary">{{ produkt.cislo_dielu }}</td>
+                            <td>{{ produkt.nazov }}</td>
+                            <td><span class="badge bg-light text-dark border">{{ produkt.material }}</span></td>
+                            <td class="text-center">{{ produkt.spotreba_ks }} ks</td>
+                            <td class="text-center">{{ produkt.norma_hod }} ks/hod</td>
+                            <td class="text-end">
+                                <a href="{% url 'detail_produkt' pk=produkt.pk %}" class="btn btn-primary btn-sm">👁️ Detail</a>
+                            </td>
+                        </tr>
+                        {% empty %}
+                        <tr>
+                            <td colspan="6" class="text-center py-4 text-muted">
+                                Zatiaľ žiadne produkty. Pridajte prvý tlačidlom vpravo hore.
+                            </td>
+                        </tr>
+                        {% endfor %}
+                    </tbody>
+                </table>
+            </div>
+        </div>
+    </div>
+</div>
+
+<!-- ========================================== -->
+<!-- VERZIA PRE MOBIL (Karty) -->
+<!-- Zobrazí sa len na malých obrazovkách (do veľkosti md) -->
+<!-- ========================================== -->
+<div class="d-md-none">
+    {% for produkt in produkty %}
+    <div class="card mb-3 shadow-sm border-0">
+        <div class="card-body">
+            <div class="d-flex justify-content-between align-items-start mb-2">
+                <div>
+                    <h5 class="card-title mb-1 text-primary fw-bold">{{ produkt.cislo_dielu }}</h5>
+                    <h6 class="card-subtitle text-dark">{{ produkt.nazov }}</h6>
+                </div>
+                <span class="badge bg-light text-dark border">{{ produkt.material }}</span>
+            </div>
+            
+            <div class="row g-2 mt-2 mb-3">
+                <div class="col-6">
+                    <small class="text-muted d-block">Norma</small>
+                    <strong>{{ produkt.norma_hod }} ks/hod</strong>
+                </div>
+                <div class="col-6">
+                    <small class="text-muted d-block">Výroba</small>
+                    <strong>{{ produkt.cas_vyroby }} min</strong>
+                </div>
+            </div>
+
+            <a href="{% url 'detail_produkt' pk=produkt.pk %}" class="btn btn-outline-primary w-100">
+                👁️ Otvoriť detail
+            </a>
+        </div>
+    </div>
+    {% empty %}
+    <div class="alert alert-secondary text-center">
+        Zatiaľ žiadne produkty.
+    </div>
+    {% endfor %}
+</div>
+{% endblock %}

@@ -1,0 +1,128 @@
+{% extends 'core/base.html' %}
+
+{% block content %}
+<div class="mb-3">
+    <a href="{% url 'zoznam_produktov' %}" class="btn btn-outline-secondary">⬅ Späť na zoznam</a>
+</div>
+
+<div class="row">
+    <!-- Ľavý stĺpec: Informácie a Operácie -->
+    <div class="col-md-8">
+        
+        <!-- Karta s informáciami -->
+        <div class="card mb-4">
+            <div class="card-header bg-primary text-white">
+                <h4 class="mb-0">{{ produkt.nazov }} ({{ produkt.cislo_dielu }})</h4>
+            </div>
+            <div class="card-body">
+                <div class="row g-3">
+                    <div class="col-md-6">
+                        <label class="text-muted">Materiál:</label>
+                        <h5>{{ produkt.material }}</h5>
+                    </div>
+                    <div class="col-md-6">
+                        <label class="text-muted">Rozmer polotovaru:</label>
+                        <h5>{{ produkt.rozmer_polotovaru|default:"-" }}</h5>
+                    </div>
+                    <div class="col-md-6">
+                        <label class="text-muted">Spotreba na kus:</label>
+                        <h5>{{ produkt.spotreba_ks }} ks</h5>
+                    </div>
+                    <div class="col-md-6">
+                        <label class="text-muted">Index zmeny:</label>
+                        <h5>{{ produkt.index }}</h5>
+                    </div>
+                </div>
+                <hr>
+                <div class="row g-3">
+                    <div class="col-md-6">
+                        <label class="text-muted">Čas výroby (celkom):</label>
+                        <h5>⏱️ {{ produkt.cas_vyroby }} min</h5>
+                    </div>
+                    <div class="col-md-6">
+                        <label class="text-muted">Norma:</label>
+                        <h5>📊 {{ produkt.norma_hod }} ks/hod</h5>
+                    </div>
+                </div>
+            </div>
+        </div>
+
+        <!-- Tabuľka Operácií (NOVÉ) -->
+        <h4 class="mb-3">⚙️ Výrobný postup (Operácie)</h4>
+        <div class="card mb-4">
+            <div class="card-body p-0">
+                <div class="table-responsive">
+                    <table class="table table-striped mb-0">
+                        <thead class="table-dark">
+                            <tr>
+                                <th style="width: 50px;">#</th>
+                                <th>Operácia</th>
+                                <th>Stroj</th>
+                                <th>Príprava (min)</th>
+                                <th>Čas/kus (min)</th>
+                            </tr>
+                        </thead>
+                        <tbody>
+                            {% for operacia in produkt.operacie.all %}
+                            <tr>
+                                <td class="text-center"><strong>{{ operacia.poradie }}</strong></td>
+                                <td>{{ operacia.nazov_operacie }}</td>
+                                <td>
+                                    <span class="badge bg-secondary">{{ operacia.stroj.kod }}</span>
+                                    {{ operacia.stroj.nazov }}
+                                </td>
+                                <td>{{ operacia.cas_pripravy }}</td>
+                                <td>{{ operacia.cas_kus }}</td>
+                            </tr>
+                            {% empty %}
+                            <tr>
+                                <td colspan="5" class="text-center text-muted py-3">
+                                    <em>K tomuto produktu zatiaľ nie sú priradené žiadne operácie.</em>
+                                </td>
+                            </tr>
+                            {% endfor %}
+                        </tbody>
+                    </table>
+                </div>
+            </div>
+        </div>
+
+    </div>
+
+    <!-- Pravý stĺpec: Súbory -->
+    <div class="col-md-4">
+        <div class="card">
+            <div class="card-header">📂 Dokumentácia</div>
+            <div class="list-group list-group-flush">
+                {% if produkt.vykres_pdf %}
+                <a href="{{ produkt.vykres_pdf.url }}" target="_blank" class="list-group-item list-group-item-action d-flex justify-content-between align-items-center">
+                    <div>
+                        <strong>📄 Výkres</strong><br>
+                        <small class="text-muted">Klikni pre otvorenie</small>
+                    </div>
+                    <span class="badge bg-danger">PDF</span>
+                </a>
+                {% else %}
+                <div class="list-group-item text-muted">Bez výkresu</div>
+                {% endif %}
+
+                {% if produkt.baliaci_predpis %}
+                <a href="{{ produkt.baliaci_predpis.url }}" target="_blank" class="list-group-item list-group-item-action d-flex justify-content-between align-items-center">
+                    <div>
+                        <strong>📦 Balenie</strong><br>
+                        <small class="text-muted">Baliaci predpis</small>
+                    </div>
+                    <span class="badge bg-success">XLS/PDF</span>
+                </a>
+                {% else %}
+                <div class="list-group-item text-muted">Bez baliaceho predpisu</div>
+                {% endif %}
+            </div>
+        </div>
+        
+        <div class="mt-3">
+            <a href="/admin/core/produkt/{{ produkt.pk }}/change/" class="btn btn-warning w-100">✏️ Upraviť produkt</a>
+        </div>
+    </div>
+</div>
+{% endblock %}
