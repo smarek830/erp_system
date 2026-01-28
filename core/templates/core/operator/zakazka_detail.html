@@ -1,0 +1,51 @@
+{% extends "core/base.html" %}
+
+{% block content %}
+<div class="container mt-4">
+    <h1>📦 Zakázka #{{ objednavka.cislo_objednavky }}</h1>
+    
+    <div class="card mb-3">
+        <div class="card-body">
+            <p><strong>Produkt:</strong> {{ objednavka.produkt.nazov }}</p>
+            <p><strong>Číslo dielu:</strong> {{ objednavka.produkt.cislo_dielu }}</p>
+            <p><strong>Množstvo:</strong> {{ objednavka.mnozstvo }} ks</p>
+            <p><strong>Termín:</strong> {{ objednavka.datum_pozadovane }}</p>
+            <p><strong>Stav:</strong> <span class="badge bg-info">{{ objednavka.get_stav_display }}</span></p>
+        </div>
+    </div>
+
+    <!-- VÝKRES -->
+    {% if objednavka.produkt.vykres_pdf %}
+    <div class="card mb-3">
+        <div class="card-header">📄 Výkres</div>
+        <div class="card-body">
+            <embed src="{{ objednavka.produkt.vykres_pdf.url }}" type="application/pdf" width="100%" height="600px">
+        </div>
+    </div>
+    {% endif %}
+
+    <!-- OPERÁCIE -->
+    {% if operacie %}
+    <div class="card mb-3">
+        <div class="card-header">⚙️ Operácie</div>
+        <div class="card-body">
+            <ol>
+                {% for op in operacie %}
+                <li><strong>{{ op.nazov_operacie }}</strong> - {{ op.stroj.nazov }} ({{ op.cas_kus }} min/ks)</li>
+                {% endfor %}
+            </ol>
+        </div>
+    </div>
+    {% endif %}
+
+    <!-- TLAČIDLÁ -->
+    <div class="btn-group mb-3" role="group">
+        <button class="btn btn-success" onclick="alert('Začať prácu - TODO')">🟢 Začať prácu</button>
+        <button class="btn btn-warning" onclick="alert('Pozastaviť - TODO')">⏸️ Pozastaviť</button>
+        <button class="btn btn-primary" onclick="alert('Skončiť - TODO')">✅ Skončiť prácu</button>
+        <button class="btn btn-danger" onclick="alert('Hlásenie - TODO')">⚠️ Hlásenie problému</button>
+    </div>
+
+    <a href="{% url 'operator_dashboard' %}" class="btn btn-secondary">← Späť na dashboard</a>
+</div>
+{% endblock %}

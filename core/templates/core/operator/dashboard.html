@@ -1,0 +1,36 @@
+{% extends "core/base.html" %}
+
+{% block content %}
+<div class="container mt-4">
+    <h1>🛠️ Môj Dashboard</h1>
+    <p>Prihlásený: <strong>{{ user.username }}</strong></p>
+
+    <h2>📦 Moje rozpracované zakázky</h2>
+    {% if rozpracovane %}
+        <div class="list-group mb-4">
+            {% for obj in rozpracovane %}
+            <a href="{% url 'operator_zakazka_detail' obj.pk %}" class="list-group-item list-group-item-action">
+                <strong>#{{ obj.cislo_objednavky }}</strong> - {{ obj.produkt.nazov }} ({{ obj.mnozstvo }} ks)
+                <span class="badge bg-warning">{{ obj.get_stav_display }}</span>
+            </a>
+            {% endfor %}
+        </div>
+    {% else %}
+        <p class="text-muted">Žiadne rozpracované zakázky</p>
+    {% endif %}
+
+    <h2>🆕 Nové zakázky</h2>
+    {% if nove %}
+        <div class="list-group">
+            {% for obj in nove %}
+            <a href="{% url 'operator_zakazka_detail' obj.pk %}" class="list-group-item list-group-item-action">
+                <strong>#{{ obj.cislo_objednavky }}</strong> - {{ obj.produkt.nazov }} ({{ obj.mnozstvo }} ks)
+                <small class="text-muted">Termín: {{ obj.datum_pozadovane }}</small>
+            </a>
+            {% endfor %}
+        </div>
+    {% else %}
+        <p class="text-muted">Žiadne nové zakázky</p>
+    {% endif %}
+</div>
+{% endblock %}

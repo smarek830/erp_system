@@ -168,6 +168,9 @@ class HlasenieVyroby(models.Model):
     typ_problemu = models.CharField(max_length=20, choices=TYPY_HLASENIA)
     pocet_kusov_nepodarkov = models.PositiveIntegerField(default=0, verbose_name="Počet zlých kusov")
     popis_problemu = models.TextField(verbose_name="Popis problému")
-
+    
+    # NOVÉ POLIA:
+    fotka_problemu = models.ImageField(upload_to='hlasenia/', null=True, blank=True, verbose_name="Fotka problému")
+    
     def __str__(self):
         return f"{self.get_typ_problemu_display()} - {self.objednavka}"
