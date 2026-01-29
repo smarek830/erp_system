@@ -8,13 +8,24 @@
         <div class="card-body">
             <p><strong>Produkt:</strong> {{ objednavka.produkt.nazov }}</p>
             <p><strong>Číslo dielu:</strong> {{ objednavka.produkt.cislo_dielu }}</p>
+            <p><strong>Materiál:</strong> {{ objednavka.produkt.material }}</p>
             <p><strong>Množstvo:</strong> {{ objednavka.mnozstvo }} ks</p>
+            <p><strong>Vyrobené:</strong> {{ objednavka.vyrobene_mnozstvo }} ks</p>
+            <p><strong>Zostáva:</strong> {{ objednavka.zostava_vyroba }} ks</p>
             <p><strong>Termín:</strong> {{ objednavka.datum_pozadovane }}</p>
-            <p><strong>Stav:</strong> <span class="badge bg-info">{{ objednavka.get_stav_display }}</span></p>
+            <p><strong>Stav:</strong> 
+                <span class="badge 
+                    {% if objednavka.stav == 'nova' %}bg-secondary
+                    {% elif objednavka.stav == 'vyroba' %}bg-primary
+                    {% elif objednavka.stav == 'hotovo' %}bg-success
+                    {% elif objednavka.stav == 'pozastavene' %}bg-warning
+                    {% endif %}">
+                    {{ objednavka.get_stav_display }}
+                </span>
+            </p>
         </div>
     </div>
 
-    <!-- VÝKRES -->
     {% if objednavka.produkt.vykres_pdf %}
     <div class="card mb-3">
         <div class="card-header">📄 Výkres</div>
@@ -24,28 +35,342 @@
     </div>
     {% endif %}
 
-    <!-- OPERÁCIE -->
     {% if operacie %}
     <div class="card mb-3">
         <div class="card-header">⚙️ Operácie</div>
         <div class="card-body">
-            <ol>
-                {% for op in operacie %}
-                <li><strong>{{ op.nazov_operacie }}</strong> - {{ op.stroj.nazov }} ({{ op.cas_kus }} min/ks)</li>
-                {% endfor %}
-            </ol>
+            {% for op in operacie %}
+            <div class="card mb-2 border-secondary">
+                <div class="card-body">
+                    <h5>{{ op.poradie }}. {{ op.nazov_operacie }}</h5>
+                    <p class="mb-2">
+                        <strong>Stroj:</strong> {{ op.stroj.nazov }}<br>
+                        <strong>Čas:</strong> {{ op.cas_kus }} min/ks
+                    </p>
+                    
+                    <div class="btn-group btn-group-sm" role="group">
+                        {% if not op.posledny_zaznam or op.posledny_zaznam.typ_udalosti == 'STOP' or op.posledny_zaznam.typ_udalosti == 'PAUZA' %}
+                            <button class="btn btn-success" onclick="startOperation({{ op.pk }})">
+                                🟢 Začať
+                            </button>
+                        {% endif %}
+                        
+                        {% if op.posledny_zaznam and op.posledny_zaznam.typ_udalosti == 'START' %}
+                            <button class="btn btn-warning" onclick="showPauseModal({{ op.pk }})">
+                                ⏸️ Pozastaviť
+                            </button>
+                            <button class="btn btn-primary" onclick="endOperation({{ op.pk }})">
+                                ✅ Skončiť
+                            </button>
+                        {% endif %}
+                    </div>
+                    
+                    {% if op.posledny_zaznam %}
+                    <small class="text-muted d-block mt-1">
+                        Posledná akcia: {{ op.posledny_zaznam.get_typ_udalosti_display }} ({{ op.posledny_zaznam.cas_zaznamu|date:"H:i" }})
+                    </small>
+                    {% endif %}
+                </div>
+            </div>
+            {% endfor %}
         </div>
     </div>
     {% endif %}
 
-    <!-- TLAČIDLÁ -->
-    <div class="btn-group mb-3" role="group">
-        <button class="btn btn-success" onclick="alert('Začať prácu - TODO')">🟢 Začať prácu</button>
-        <button class="btn btn-warning" onclick="alert('Pozastaviť - TODO')">⏸️ Pozastaviť</button>
-        <button class="btn btn-primary" onclick="alert('Skončiť - TODO')">✅ Skončiť prácu</button>
-        <button class="btn btn-danger" onclick="alert('Hlásenie - TODO')">⚠️ Hlásenie problému</button>
-    </div>
+    <button class="btn btn-success btn-lg w-100 mb-2" onclick="showEndModal()">
+        ✅ Skončiť prácu + Kontrola kvality
+    </button>
+    
+    <button class="btn btn-danger btn-lg w-100 mb-3" onclick="showReportModal()">
+        ⚠️ Hlásenie problému
+    </button>
 
-    <a href="{% url 'operator_dashboard' %}" class="btn btn-secondary">← Späť na dashboard</a>
+    <a href="{% url 'operator_dashboard' %}" class="btn btn-secondary btn-lg w-100">← Späť na dashboard</a>
 </div>
+
+<div class="modal fade" id="pauseModal" tabindex="-1">
+    <div class="modal-dialog">
+        <div class="modal-content">
+            <div class="modal-header bg-warning">
+                <h5 class="modal-title">⏸️ Pozastaviť prácu</h5>
+                <button type="button" class="btn-close" data-bs-dismiss="modal"></button>
+            </div>
+            <div class="modal-body">
+                <label class="form-label"><strong>Dôvod pauzy:</strong></label>
+                <select class="form-select mb-3" id="pauseReason">
+                    <option value="">-- Vyberte dôvod --</option>
+                    <option value="Porucha stroja">Porucha stroja</option>
+                    <option value="Porucha nástroja">Porucha nástroja</option>
+                    <option value="Chýbajúci materiál">Chýbajúci materiál</option>
+                    <option value="Pauza/Obed">Pauza/Obed</option>
+                    <option value="Iné">Iné</option>
+                </select>
+                <div id="pauseOtherBox" style="display:none;">
+                    <label class="form-label">Uveďte dôvod:</label>
+                    <textarea class="form-control" id="pauseOtherText" rows="2"></textarea>
+                </div>
+            </div>
+            <div class="modal-footer">
+                <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">Zrušiť</button>
+                <button type="button" class="btn btn-warning" onclick="submitPause()">Potvrdiť pauzu</button>
+            </div>
+        </div>
+    </div>
+</div>
+
+<div class="modal fade" id="endModal" tabindex="-1">
+    <div class="modal-dialog">
+        <div class="modal-content">
+            <div class="modal-header bg-primary text-white">
+                <h5 class="modal-title">✅ Skončiť prácu</h5>
+                <button type="button" class="btn-close" data-bs-dismiss="modal"></button>
+            </div>
+            <div class="modal-body">
+                <form id="endWorkForm" enctype="multipart/form-data">
+                    <div class="mb-3">
+                        <label class="form-label"><strong>📸 Fotka produktu (POVINNÁ):</strong></label>
+                        <input type="file" class="form-control" id="endFotka" accept="image/*" capture="environment" required>
+                        <small class="text-muted">Odfotiť cez mobil</small>
+                    </div>
+                    <div class="row">
+                        <div class="col-6">
+                            <label class="form-label">Počet OK kusov:</label>
+                            <input type="number" class="form-control" id="endPocetOK" value="0" min="0">
+                        </div>
+                        <div class="col-6">
+                            <label class="form-label">Počet NOK kusov:</label>
+                            <input type="number" class="form-control" id="endPocetNOK" value="0" min="0">
+                        </div>
+                    </div>
+                    <div class="mb-3 mt-3">
+                        <label class="form-label">Poznámka:</label>
+                        <textarea class="form-control" id="endPoznamka" rows="2"></textarea>
+                    </div>
+                </form>
+            </div>
+            <div class="modal-footer">
+                <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">Zrušiť</button>
+                <button type="button" class="btn btn-primary" onclick="submitEnd()">Potvrdiť ukončenie</button>
+            </div>
+        </div>
+    </div>
+</div>
+
+<div class="modal fade" id="reportModal" tabindex="-1">
+    <div class="modal-dialog">
+        <div class="modal-content">
+            <div class="modal-header bg-danger text-white">
+                <h5 class="modal-title">⚠️ Hlásenie problému</h5>
+                <button type="button" class="btn-close" data-bs-dismiss="modal"></button>
+            </div>
+            <div class="modal-body">
+                <div class="mb-3">
+                    <label class="form-label"><strong>Typ problému:</strong></label>
+                    <select class="form-select" id="reportType">
+                        <option value="">-- Vyberte typ --</option>
+                        <option value="NEPODAROK">🗑️ Nepodarok (Scrap)</option>
+                        <option value="PORUCHA_STROJA">⚙️ Porucha stroja</option>
+                        <option value="POSKODENY_NASTROJ">🔧 Poškodený nástroj</option>
+                        <option value="INA_CHYBA">⚠️ Iný problém</option>
+                    </select>
+                </div>
+                <div class="mb-3">
+                    <label class="form-label">Počet ovplyvnených kusov:</label>
+                    <input type="number" class="form-control" id="reportPocet" value="0" min="0">
+                </div>
+                <div class="mb-3">
+                    <label class="form-label">Popis problému:</label>
+                    <textarea class="form-control" id="reportPopis" rows="3" required></textarea>
+                </div>
+            </div>
+            <div class="modal-footer">
+                <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">Zrušiť</button>
+                <button type="button" class="btn btn-danger" onclick="submitReport()">Nahlásiť problém</button>
+            </div>
+        </div>
+    </div>
+</div>
+
+<script>
+function getCookie(name) {
+    let cookieValue = null;
+    if (document.cookie && document.cookie !== '') {
+        const cookies = document.cookie.split(';');
+        for (let i = 0; i < cookies.length; i++) {
+            const cookie = cookies[i].trim();
+            if (cookie.substring(0, name.length + 1) === (name + '=')) {
+                cookieValue = decodeURIComponent(cookie.substring(name.length + 1));
+                break;
+            }
+        }
+    }
+    return cookieValue;
+}
+const csrftoken = getCookie('csrftoken');
+
+let currentOperaciaId = null;
+
+document.addEventListener('DOMContentLoaded', function() {
+    const pauseSelect = document.getElementById('pauseReason');
+    if (pauseSelect) {
+        pauseSelect.addEventListener('change', function() {
+            const otherBox = document.getElementById('pauseOtherBox');
+            if (this.value === 'Iné') {
+                otherBox.style.display = 'block';
+            } else {
+                otherBox.style.display = 'none';
+            }
+        });
+    }
+});
+
+function startOperation(operaciaId) {
+    if (!confirm('Chcete začať túto operáciu?')) return;
+    
+    fetch(`/api/operator/start/{{ objednavka.pk }}/${operaciaId}/`, {
+        method: 'POST',
+        headers: {'X-CSRFToken': csrftoken, 'Content-Type': 'application/json'}
+    })
+    .then(response => response.json())
+    .then(data => {
+        if (data.status === 'ok') {
+            alert('✅ ' + data.message);
+            location.reload();
+        } else {
+            alert('❌ Chyba: ' + data.message);
+        }
+    })
+    .catch(error => alert('❌ Chyba pripojenia: ' + error));
+}
+
+function showPauseModal(operaciaId) {
+    currentOperaciaId = operaciaId;
+    const modal = new bootstrap.Modal(document.getElementById('pauseModal'));
+    modal.show();
+}
+
+function submitPause() {
+    let dovod = document.getElementById('pauseReason').value;
+    if (!dovod) {
+        alert('⚠️ Vyberte dôvod pauzy!');
+        return;
+    }
+    if (dovod === 'Iné') {
+        const otherText = document.getElementById('pauseOtherText').value;
+        if (!otherText) {
+            alert('⚠️ Uveďte dôvod pauzy!');
+            return;
+        }
+        dovod = 'Iné: ' + otherText;
+    }
+    
+    fetch(`/api/operator/pause/{{ objednavka.pk }}/${currentOperaciaId}/`, {
+        method: 'POST',
+        headers: {'X-CSRFToken': csrftoken, 'Content-Type': 'application/json'},
+        body: JSON.stringify({ dovod: dovod })
+    })
+    .then(response => response.json())
+    .then(data => {
+        if (data.status === 'ok') {
+            alert('⏸️ Práca pozastavená!');
+            location.reload();
+        } else {
+            alert('❌ Chyba: ' + data.message);
+        }
+    })
+    .catch(error => alert('❌ Chyba pripojenia: ' + error));
+}
+
+function endOperation(operaciaId) {
+    if (!confirm('Chcete ukončiť túto operáciu?')) return;
+    
+    fetch(`/api/operator/end-operation/{{ objednavka.pk }}/${operaciaId}/`, {
+        method: 'POST',
+        headers: {'X-CSRFToken': csrftoken, 'Content-Type': 'application/json'}
+    })
+    .then(response => response.json())
+    .then(data => {
+        if (data.status === 'ok') {
+            alert('✅ ' + data.message);
+            location.reload();
+        } else {
+            alert('❌ Chyba: ' + data.message);
+        }
+    })
+    .catch(error => alert('❌ Chyba pripojenia: ' + error));
+}
+
+function showEndModal() {
+    const modal = new bootstrap.Modal(document.getElementById('endModal'));
+    modal.show();
+}
+
+function submitEnd() {
+    const fotka = document.getElementById('endFotka').files[0];
+    if (!fotka) {
+        alert('⚠️ Fotka produktu je povinná!');
+        return;
+    }
+    const pocetOK = document.getElementById('endPocetOK').value;
+    const pocetNOK = document.getElementById('endPocetNOK').value;
+    const poznamka = document.getElementById('endPoznamka').value;
+    const formData = new FormData();
+    formData.append('fotka', fotka);
+    formData.append('pocet_ok', pocetOK);
+    formData.append('pocet_nok', pocetNOK);
+    formData.append('poznamka', poznamka);
+    fetch('/api/operator/end/{{ objednavka.pk }}/', {
+        method: 'POST',
+        headers: {'X-CSRFToken': csrftoken},
+        body: formData
+    })
+    .then(response => response.json())
+    .then(data => {
+        if (data.status === 'ok') {
+            alert('✅ Práca ukončená!');
+            location.reload();
+        } else {
+            alert('❌ Chyba: ' + data.message);
+        }
+    })
+    .catch(error => alert('❌ Chyba pripojenia: ' + error));
+}
+
+function showReportModal() {
+    const modal = new bootstrap.Modal(document.getElementById('reportModal'));
+    modal.show();
+}
+
+function submitReport() {
+    const typ = document.getElementById('reportType').value;
+    const pocet = document.getElementById('reportPocet').value;
+    const popis = document.getElementById('reportPopis').value;
+    
+    if (!typ || !popis) {
+        alert('⚠️ Vyplňte typ a popis problému!');
+        return;
+    }
+    
+    fetch('/api/operator/report/{{ objednavka.pk }}/', {
+        method: 'POST',
+        headers: {'X-CSRFToken': csrftoken, 'Content-Type': 'application/json'},
+        body: JSON.stringify({
+            typ_problemu: typ,
+            pocet_kusov: pocet,
+            popis: popis
+        })
+    })
+    .then(response => response.json())
+    .then(data => {
+        if (data.status === 'ok') {
+            alert('✅ Problém nahlásený!');
+            location.reload();
+        } else {
+            alert('❌ Chyba: ' + data.message);
+        }
+    })
+    .catch(error => alert('❌ Chyba pripojenia: ' + error));
+}
+</script>
+
 {% endblock %}

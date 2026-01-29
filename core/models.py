@@ -9,17 +9,20 @@ class Stroj(models.Model):
         ('PORUCHA', '🔴 Porucha'),
         ('SERVIS', '🟡 V servise'),
     ]
-
+    
     nazov = models.CharField(max_length=100, verbose_name="Názov stroja")
     typ = models.CharField(max_length=100, blank=True, verbose_name="Typ/Model")
-    
     status = models.CharField(max_length=10, choices=STATUS_CHOICES, default='OK', verbose_name="Aktuálny stav")
     hodinova_sadzba = models.DecimalField(max_digits=6, decimal_places=2, default=0.00, verbose_name="Cena za hodinu (€)")
     datum_posledneho_servisu = models.DateField(null=True, blank=True, verbose_name="Posledný servis")
     manual_pdf = models.FileField(upload_to='manualy_strojov/', null=True, blank=True, verbose_name="Manuál (PDF)")
-
+    
     def __str__(self):
         return f"{self.nazov} ({self.get_status_display()})"
+    
+    class Meta:
+        verbose_name = "Stroj"
+        verbose_name_plural = "Stroje"
 
 
 # 2. MODEL: PRODUKTY
@@ -29,22 +32,19 @@ class Produkt(models.Model):
     cislo_vykresu = models.CharField(max_length=50, blank=True, null=True, verbose_name="Číslo výkresu")
     index = models.IntegerField(default=0, verbose_name="Index zmeny")
     
-    # Materiál a rozmery
-    material = models.CharField(max_length=100, blank=True, verbose_name="Materiál (napr. Ocel 11373)")
+    material = models.CharField(max_length=100, blank=True, verbose_name="Materiál")
     rozmer_polotovaru = models.CharField(max_length=100, blank=True, verbose_name="Rozmer polotovaru")
     spotreba_ks = models.DecimalField(max_digits=10, decimal_places=2, default=0, verbose_name="Spotreba na kus")
-
-    # Výroba
+    
     cas_vyroby = models.IntegerField(default=0, verbose_name="Čas výroby (min)")
     norma_hod = models.IntegerField(default=0, verbose_name="Norma (ks/hod)")
-
-    # Súbory
+    
     vykres_pdf = models.FileField(upload_to='vykresy/', blank=True, null=True, verbose_name="Výkres (PDF)")
     baliaci_predpis_pdf = models.FileField(upload_to='baliace_predpisy/', null=True, blank=True, verbose_name="Baliaci predpis (PDF)")
-
+    
     def __str__(self):
         return f"{self.nazov} (Index: {self.index if self.index else '-'})"
-
+    
     class Meta:
         verbose_name = "Produkt"
         verbose_name_plural = "Produkty"
@@ -55,13 +55,13 @@ class Operacia(models.Model):
     produkt = models.ForeignKey(Produkt, on_delete=models.CASCADE, related_name='operacie')
     stroj = models.ForeignKey(Stroj, on_delete=models.PROTECT, verbose_name="Stroj")
     poradie = models.IntegerField(default=1, verbose_name="Poradie operácie")
-    nazov_operacie = models.CharField(max_length=100, verbose_name="Názov (napr. Hrubovanie)")
+    nazov_operacie = models.CharField(max_length=100, verbose_name="Názov")
     cas_pripravy = models.IntegerField(default=0, verbose_name="Čas prípravy (min)")
     cas_kus = models.DecimalField(max_digits=10, decimal_places=2, default=0, verbose_name="Čas na kus (min)")
-
+    
     def __str__(self):
         return f"{self.poradie}. {self.nazov_operacie} - {self.produkt.nazov}"
-
+    
     class Meta:
         ordering = ['poradie']
         verbose_name = "Operácia"
@@ -76,21 +76,28 @@ class Objednavka(models.Model):
         ('hotovo', '✅ Hotovo'),
         ('pozastavene', '⏸️ Pozastavené'),
     ]
-
+    
     cislo_objednavky = models.CharField(max_length=50, unique=True, verbose_name="Číslo objednávky")
     zakaznik = models.CharField(max_length=100, verbose_name="Zákazník")
     produkt = models.ForeignKey(Produkt, on_delete=models.PROTECT, verbose_name="Produkt")
     mnozstvo = models.IntegerField(verbose_name="Množstvo (ks)")
+    vyrobene_mnozstvo = models.IntegerField(default=0, verbose_name="Vyrobené množstvo (ks)")
     
     datum_zadania = models.DateField(default=timezone.now, verbose_name="Dátum zadania")
     datum_pozadovane = models.DateField(verbose_name="Požadovaný termín")
     
     stav = models.CharField(max_length=20, choices=STAVY, default='nova', verbose_name="Stav")
     poznamka = models.TextField(blank=True, verbose_name="Poznámka")
-
+    
+    def zostava_vyroba(self):
+        return self.mnozstvo - self.vyrobene_mnozstvo
+    
+    def je_dokoncena(self):
+        return self.vyrobene_mnozstvo >= self.mnozstvo
+    
     def __str__(self):
         return f"#{self.cislo_objednavky} - {self.zakaznik} ({self.mnozstvo} ks)"
-
+    
     class Meta:
         verbose_name = "Objednávka"
         verbose_name_plural = "Objednávky"
@@ -101,7 +108,7 @@ class Objednavka(models.Model):
 class Kontrakt(models.Model):
     zakaznik = models.CharField(max_length=100, verbose_name="Zákazník")
     cislo_kontraktu = models.CharField(max_length=50, unique=True, verbose_name="Číslo kontraktu")
-    produkt = models.ForeignKey(Produkt, on_delete=models.PROTECT, verbose_name="Produkt (Diel + Index)")
+    produkt = models.ForeignKey(Produkt, on_delete=models.PROTECT, verbose_name="Produkt")
     
     pocet_kusov_celkovo = models.PositiveIntegerField(verbose_name="Celkový počet kusov")
     zostavajuce_mnozstvo = models.PositiveIntegerField(verbose_name="Zostáva dodať", blank=True)
@@ -114,12 +121,12 @@ class Kontrakt(models.Model):
         if self.zostavajuce_mnozstvo is None:
             self.zostavajuce_mnozstvo = self.pocet_kusov_celkovo
         super().save(*args, **kwargs)
-
+    
     def __str__(self):
         return f"Kontrakt {self.cislo_kontraktu} - {self.zakaznik}"
 
 
-# 6. MODEL: ZÁZNAMY VÝROBY (Start/Stop)
+# 6. MODEL: VÝROBNÉ ZÁZNAMY
 class VyrobnyZaznam(models.Model):
     TYPY_UDALOSTI = [
         ('START', '🟢 Začiatok práce'),
@@ -128,13 +135,19 @@ class VyrobnyZaznam(models.Model):
     ]
     
     objednavka = models.ForeignKey(Objednavka, on_delete=models.CASCADE, related_name='zaznamy')
+    operacia = models.ForeignKey(Operacia, on_delete=models.SET_NULL, null=True, blank=True, verbose_name="Operácia")
     operator = models.ForeignKey(User, on_delete=models.SET_NULL, null=True, verbose_name="Operátor")
     cas_zaznamu = models.DateTimeField(auto_now_add=True)
     typ_udalosti = models.CharField(max_length=10, choices=TYPY_UDALOSTI)
     dovod_pauzy = models.TextField(blank=True, null=True, verbose_name="Dôvod pauzy")
     
     def __str__(self):
+        if self.operacia:
+            return f"{self.get_typ_udalosti_display()} - {self.objednavka} - {self.operacia.nazov_operacie}"
         return f"{self.get_typ_udalosti_display()} - {self.objednavka}"
+    
+    class Meta:
+        ordering = ['-cas_zaznamu']
 
 
 # 7. MODEL: KONTROLA KVALITY
@@ -146,13 +159,13 @@ class KontrolaKvality(models.Model):
     namerana_hodnota = models.CharField(max_length=50, verbose_name="Nameraná hodnota")
     vysledok_ok = models.BooleanField(default=True, verbose_name="Je to OK?")
     fotka = models.ImageField(upload_to='kontrola_kvality/', verbose_name="Fotka produktu", null=True, blank=True)
-    poznamka = models.TextField(blank=True, verbose_name="Poznámka ku kontrole")
-
+    poznamka = models.TextField(blank=True, verbose_name="Poznámka")
+    
     def __str__(self):
         return f"Kontrola {self.objednavka.id} - {'OK' if self.vysledok_ok else 'NOK'}"
 
 
-# 8. MODEL: HLÁSENIA (Nepodarky, Poruchy)
+# 8. MODEL: HLÁSENIA
 class HlasenieVyroby(models.Model):
     TYPY_HLASENIA = [
         ('NEPODAROK', '🗑️ Nepodarok (Scrap)'),
@@ -168,9 +181,119 @@ class HlasenieVyroby(models.Model):
     typ_problemu = models.CharField(max_length=20, choices=TYPY_HLASENIA)
     pocet_kusov_nepodarkov = models.PositiveIntegerField(default=0, verbose_name="Počet zlých kusov")
     popis_problemu = models.TextField(verbose_name="Popis problému")
-    
-    # NOVÉ POLIA:
     fotka_problemu = models.ImageField(upload_to='hlasenia/', null=True, blank=True, verbose_name="Fotka problému")
     
     def __str__(self):
         return f"{self.get_typ_problemu_display()} - {self.objednavka}"
+# 9. SKLAD - MATERIÁL
+class Material(models.Model):
+    TYPY_MATERIALU = [
+        ('SUROVINA', 'Surovina (tyč, plech...)'),
+        ('POLOTOVAR', 'Polotovar'),
+        ('KOMPONENT', 'Komponent'),
+    ]
+    
+    nazov = models.CharField(max_length=200, verbose_name="Názov materiálu")
+    kod = models.CharField(max_length=50, unique=True, verbose_name="Kód materiálu")
+    typ = models.CharField(max_length=20, choices=TYPY_MATERIALU, default='SUROVINA')
+    
+    aktualna_zasoba = models.DecimalField(max_digits=10, decimal_places=2, default=0, verbose_name="Aktuálna zásoba")
+    jednotka = models.CharField(max_length=20, default="kg", verbose_name="Jednotka")
+    minimalna_zasoba = models.DecimalField(max_digits=10, decimal_places=2, default=0, verbose_name="Minimálna zásoba")
+    
+    cena_za_jednotku = models.DecimalField(max_digits=10, decimal_places=2, default=0, verbose_name="Cena za jednotku (€)")
+    
+    def __str__(self):
+        return f"{self.nazov} ({self.kod}) - {self.aktualna_zasoba} {self.jednotka}"
+    
+    class Meta:
+        verbose_name = "Materiál"
+        verbose_name_plural = "Materiály"
+
+
+# 10. PRÍJEMKA NA SKLAD
+class PrijemkaNaSklad(models.Model):
+    material = models.ForeignKey(Material, on_delete=models.PROTECT)
+    mnozstvo = models.DecimalField(max_digits=10, decimal_places=2, verbose_name="Množstvo")
+    datum = models.DateTimeField(default=timezone.now)
+    dodavatel = models.CharField(max_length=200, blank=True, verbose_name="Dodávateľ")
+    cislo_dodaciho_listu = models.CharField(max_length=100, blank=True, verbose_name="Číslo dodacieho listu")
+    poznamka = models.TextField(blank=True)
+    
+    def save(self, *args, **kwargs):
+        if not self.pk:
+            self.material.aktualna_zasoba += self.mnozstvo
+            self.material.save()
+        super().save(*args, **kwargs)
+    
+    def __str__(self):
+        return f"Príjem: {self.material.nazov} +{self.mnozstvo} {self.material.jednotka}"
+    
+    class Meta:
+        verbose_name = "Príjemka na sklad"
+        verbose_name_plural = "Príjemky na sklad"
+        ordering = ['-datum']
+
+
+# 11. VÝDAJKA ZO SKLADU
+class VydajkaZoSkladu(models.Model):
+    material = models.ForeignKey(Material, on_delete=models.PROTECT)
+    objednavka = models.ForeignKey(Objednavka, on_delete=models.CASCADE, related_name='vydajky')
+    operacia = models.ForeignKey(Operacia, on_delete=models.SET_NULL, null=True, blank=True)
+    mnozstvo = models.DecimalField(max_digits=10, decimal_places=2, verbose_name="Množstvo")
+    datum = models.DateTimeField(default=timezone.now)
+    operator = models.ForeignKey(User, on_delete=models.SET_NULL, null=True)
+    poznamka = models.TextField(blank=True)
+    
+    def save(self, *args, **kwargs):
+        if not self.pk:
+            self.material.aktualna_zasoba -= self.mnozstvo
+            self.material.save()
+        super().save(*args, **kwargs)
+    
+    def __str__(self):
+        return f"Výdaj: {self.material.nazov} -{self.mnozstvo} {self.material.jednotka} (#{self.objednavka.cislo_objednavky})"
+    
+    class Meta:
+        verbose_name = "Výdajka zo skladu"
+        verbose_name_plural = "Výdajky zo skladu"
+        ordering = ['-datum']
+
+
+# 12. KONTROLNÉ PARAMETRE
+class KontrolnyParameter(models.Model):
+    produkt = models.ForeignKey(Produkt, on_delete=models.CASCADE, related_name='kontrolne_parametre')
+    nazov = models.CharField(max_length=100, verbose_name="Názov parametra")
+    hodnota_nominalna = models.DecimalField(max_digits=10, decimal_places=3, verbose_name="Nominálna hodnota")
+    tolerancia_plus = models.DecimalField(max_digits=10, decimal_places=3, default=0, verbose_name="Tolerancia +")
+    tolerancia_minus = models.DecimalField(max_digits=10, decimal_places=3, default=0, verbose_name="Tolerancia -")
+    jednotka = models.CharField(max_length=20, default="mm", verbose_name="Jednotka")
+    poradie = models.IntegerField(default=1, verbose_name="Poradie")
+    
+    def __str__(self):
+        return f"{self.nazov}: {self.hodnota_nominalna} +{self.tolerancia_plus}/-{self.tolerancia_minus} {self.jednotka}"
+    
+    class Meta:
+        verbose_name = "Kontrolný parameter"
+        verbose_name_plural = "Kontrolné parametre"
+        ordering = ['poradie']
+
+
+# 13. MERANIA PRI KONTROLE
+class MeraniePriKontrole(models.Model):
+    kontrola = models.ForeignKey(KontrolaKvality, on_delete=models.CASCADE, related_name='merania')
+    parameter = models.ForeignKey(KontrolnyParameter, on_delete=models.PROTECT)
+    namerana_hodnota = models.DecimalField(max_digits=10, decimal_places=3, verbose_name="Nameraná hodnota")
+    
+    def je_v_tolerancii(self):
+        min_hodnota = self.parameter.hodnota_nominalna - self.parameter.tolerancia_minus
+        max_hodnota = self.parameter.hodnota_nominalna + self.parameter.tolerancia_plus
+        return min_hodnota <= self.namerana_hodnota <= max_hodnota
+    
+    def __str__(self):
+        status = "✅ OK" if self.je_v_tolerancii() else "❌ NOK"
+        return f"{self.parameter.nazov}: {self.namerana_hodnota} {status}"
+    
+    class Meta:
+        verbose_name = "Meranie pri kontrole"
+        verbose_name_plural = "Merania pri kontrole"

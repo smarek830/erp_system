@@ -13,9 +13,10 @@ urlpatterns = [
     path('operator/', views.operator_dashboard, name='operator_dashboard'),
     path('operator/zakazka/<int:pk>/', views.operator_zakazka_detail, name='operator_zakazka_detail'),
     
-    # AJAX AKCIE
-    path('api/operator/start/<int:pk>/', views.start_work, name='start_work'),
-    path('api/operator/pause/<int:pk>/', views.pause_work, name='pause_work'),
+    # AJAX AKCIE - PER OPERÁCIA
+    path('api/operator/start/<int:objednavka_pk>/<int:operacia_pk>/', views.start_operation, name='start_operation'),
+    path('api/operator/pause/<int:objednavka_pk>/<int:operacia_pk>/', views.pause_operation, name='pause_operation'),
+    path('api/operator/end-operation/<int:objednavka_pk>/<int:operacia_pk>/', views.end_operation, name='end_operation'),
     path('api/operator/end/<int:pk>/', views.end_work, name='end_work'),
     path('api/operator/report/<int:pk>/', views.report_problem, name='report_problem'),
 ]
