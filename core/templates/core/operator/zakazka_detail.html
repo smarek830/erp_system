@@ -56,7 +56,7 @@
                         {% endif %}
                         
                         {% if op.posledny_zaznam and op.posledny_zaznam.typ_udalosti == 'START' %}
-                            <button class="btn btn-warning" onclick="showPauseModal({{ op.pk }})">
+                            <button class="btn btn-warning" onclick="showPauseModal({{ op.pk }},)">
                                 ⏸️ Pozastaviť
                             </button>
                             <button class="btn btn-primary" onclick="endOperation({{ op.pk }})">
@@ -76,6 +76,11 @@
         </div>
     </div>
     {% endif %}
+
+    <!-- TLAČ SPRIEVODKY -->
+    <a href="{% url 'download_sprievodka' objednavka.pk %}" class="btn btn-info btn-lg w-100 mb-2" target="_blank">
+        📄 Stiahnuť/Tlačiť sprievodku (PDF)
+    </a>
 
     <button class="btn btn-success btn-lg w-100 mb-2" onclick="showEndModal()">
         ✅ Skončiť prácu + Kontrola kvality
@@ -227,7 +232,8 @@ document.addEventListener('DOMContentLoaded', function() {
 function startOperation(operaciaId) {
     if (!confirm('Chcete začať túto operáciu?')) return;
     
-    fetch(`/api/operator/start/{{ objednavka.pk }}/${operaciaId}/`, {
+    const url = '/api/operator/start/' + {{ objednavka.pk }} + '/' + operaciaId + '/';
+    fetch(url, {
         method: 'POST',
         headers: {'X-CSRFToken': csrftoken, 'Content-Type': 'application/json'}
     })
@@ -264,7 +270,8 @@ function submitPause() {
         dovod = 'Iné: ' + otherText;
     }
     
-    fetch(`/api/operator/pause/{{ objednavka.pk }}/${currentOperaciaId}/`, {
+    const url = '/api/operator/pause/' + {{ objednavka.pk }} + '/' + currentOperaciaId + '/';
+    fetch(url, {
         method: 'POST',
         headers: {'X-CSRFToken': csrftoken, 'Content-Type': 'application/json'},
         body: JSON.stringify({ dovod: dovod })
@@ -284,7 +291,8 @@ function submitPause() {
 function endOperation(operaciaId) {
     if (!confirm('Chcete ukončiť túto operáciu?')) return;
     
-    fetch(`/api/operator/end-operation/{{ objednavka.pk }}/${operaciaId}/`, {
+    const url = '/api/operator/end-operation/' + {{ objednavka.pk }} + '/' + operaciaId + '/';
+    fetch(url, {
         method: 'POST',
         headers: {'X-CSRFToken': csrftoken, 'Content-Type': 'application/json'}
     })
@@ -319,7 +327,9 @@ function submitEnd() {
     formData.append('pocet_ok', pocetOK);
     formData.append('pocet_nok', pocetNOK);
     formData.append('poznamka', poznamka);
-    fetch('/api/operator/end/{{ objednavka.pk }}/', {
+    
+    const url = '/api/operator/end/' + {{ objednavka.pk }} + '/';
+    fetch(url, {
         method: 'POST',
         headers: {'X-CSRFToken': csrftoken},
         body: formData
@@ -351,7 +361,8 @@ function submitReport() {
         return;
     }
     
-    fetch('/api/operator/report/{{ objednavka.pk }}/', {
+    const url = '/api/operator/report/' + {{ objednavka.pk }} + '/';
+    fetch(url, {
         method: 'POST',
         headers: {'X-CSRFToken': csrftoken, 'Content-Type': 'application/json'},
         body: JSON.stringify({

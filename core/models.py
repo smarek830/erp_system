@@ -297,3 +297,21 @@ class MeraniePriKontrole(models.Model):
     class Meta:
         verbose_name = "Meranie pri kontrole"
         verbose_name_plural = "Merania pri kontrole"
+# 14. MODEL: SPRIEVODKA
+class Sprievodka(models.Model):
+    objednavka = models.OneToOneField(Objednavka, on_delete=models.CASCADE, related_name='sprievodka')
+    datum_vytvorenia = models.DateTimeField(auto_now_add=True)
+    pdf_file = models.FileField(upload_to='sprievodky/', null=True, blank=True, verbose_name="PDF Sprievodka")
+    qr_kod = models.ImageField(upload_to='qr_kody/', null=True, blank=True, verbose_name="QR kód")
+    
+    # Podpisy operátorov
+    podpis_operator_1 = models.CharField(max_length=100, blank=True, verbose_name="Operátor 1")
+    podpis_operator_2 = models.CharField(max_length=100, blank=True, verbose_name="Operátor 2")
+    podpis_operator_3 = models.CharField(max_length=100, blank=True, verbose_name="Operátor 3")
+    
+    def __str__(self):
+        return f"Sprievodka: {self.objednavka.cislo_objednavky}"
+    
+    class Meta:
+        verbose_name = "Sprievodka"
+        verbose_name_plural = "Sprievodky"

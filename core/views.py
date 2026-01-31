@@ -5,6 +5,8 @@ from django.http import JsonResponse
 from django.views.decorators.http import require_POST
 from django.utils import timezone
 import json
+from django.http import HttpResponse
+from .pdf_generator import generate_sprievodka_pdf
 
 # ========================================
 # ZÁKLADNÉ VIEWS (Pre adminov/technikov)
@@ -191,3 +193,17 @@ def report_problem(request, pk):
     )
     
     return JsonResponse({'status': 'ok', 'message': 'Problém nahlásený'})
+
+@login_required
+def download_sprievodka(request, pk):
+    """Stiahnutie PDF sprievodky"""
+    objednavka = get_object_or_404(Objednavka, pk=pk)
+    
+    # Generuj PDF
+    pdf_buffer = generate_sprievodka_pdf(objednavka, request)
+    
+    # Vráť ako stiahnuteľný súbor
+    response = HttpResponse(pdf_buffer, content_type='application/pdf')
+    response['Content-Disposition'] = f'attachment; filename="sprievodka_{objednavka.cislo_objednavky}.pdf"'
+    
+    return response

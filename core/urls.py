@@ -19,4 +19,8 @@ urlpatterns = [
     path('api/operator/end-operation/<int:objednavka_pk>/<int:operacia_pk>/', views.end_operation, name='end_operation'),
     path('api/operator/end/<int:pk>/', views.end_work, name='end_work'),
     path('api/operator/report/<int:pk>/', views.report_problem, name='report_problem'),
+
+    # PDF Sprievodka
+    path('operator/zakazka/<int:pk>/sprievodka/', views.download_sprievodka, name='download_sprievodka'),
+
 ]
