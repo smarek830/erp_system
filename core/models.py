@@ -327,7 +327,6 @@ class VydajkaHotovychDielov(models.Model):
         verbose_name = "Výdajka hotových dielov"
         verbose_name_plural = "Výdajky hotových dielov"
         ordering = ['-datum']
-python manage.py makemigrations
 
 # 6. MODEL: VÝROBNÉ ZÁZNAMY
 class VyrobnyZaznam(models.Model):

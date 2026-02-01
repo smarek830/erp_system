@@ -1,10 +1,15 @@
 from django.contrib.auth.decorators import login_required, permission_required
 from django.shortcuts import render, get_object_or_404, redirect
-from .models import Produkt, Objednavka, Stroj, VyrobnyZaznam, KontrolaKvality, HlasenieVyroby, Operacia, Kontrakt, Material
+from .models import (
+    Produkt, Objednavka, Stroj, VyrobnyZaznam, KontrolaKvality, 
+    HlasenieVyroby, Operacia, Kontrakt, Material, VyrobnaDavka,
+    SkladHotovychDielov, PrijemkaHotovychDielov, VydajkaHotovychDielov,
+    PrijemkaNaSklad, VydajkaZoSkladu
+)
 from django.http import JsonResponse, HttpResponse
 from django.views.decorators.http import require_POST
 from django.utils import timezone
-from django.db.models import Q, Sum, Count, F
+from django.db.models import Q, Sum, Count, F  # ← DÔLEŽITÉ: F je tu!
 import json
 from .pdf_generator import generate_sprievodka_pdf
 from datetime import datetime, timedelta
@@ -402,3 +407,59 @@ def vytvor_davku_z_kontraktu(request, kontrakt_pk):
         'kontrakt': kontrakt,
     }
     return render(request, 'core/vytvor_davku_form.html', context)
+# ========================================
+# SKLAD HOTOVÝCH DIELOV
+# ========================================
+
+@login_required
+@permission_required("core.view_skladhotovychdielov", raise_exception=True)
+def sklad_hotovych_dielov(request):
+    """Dashboard skladu hotových dielov"""
+    from .models import SkladHotovychDielov
+    
+    sklady = SkladHotovychDielov.objects.select_related('produkt').all()
+    
+    # Štatistiky
+    celkom_produktov = sklady.count()
+    pod_minimom = sklady.filter(mnozstvo__lt=F('minimalna_zasoba')).count()
+    nad_optimom = sklady.filter(mnozstvo__gt=F('optimalna_zasoba')).count()
+    
+    # Posledné pohyby
+    from .models import PrijemkaHotovychDielov, VydajkaHotovychDielov
+    posledne_prijemky = PrijemkaHotovychDielov.objects.select_related('sklad__produkt', 'objednavka').order_by('-datum')[:10]
+    posledne_vydajky = VydajkaHotovychDielov.objects.select_related('sklad__produkt', 'objednavka', 'kontrakt').order_by('-datum')[:10]
+    
+    context = {
+        'sklady': sklady,
+        'celkom_produktov': celkom_produktov,
+        'pod_minimom': pod_minimom,
+        'nad_optimom': nad_optimom,
+        'posledne_prijemky': posledne_prijemky,
+        'posledne_vydajky': posledne_vydajky,
+    }
+    
+    return render(request, 'core/sklad.html', context)
+
+@login_required
+@permission_required("core.view_material", raise_exception=True)
+def sklad_materialu(request):
+    """Dashboard skladu materiálu"""
+    materialy = Material.objects.all().order_by('nazov')
+    
+    # Štatistiky
+    celkom = materialy.count()
+    pod_minimom = materialy.filter(aktualna_zasoba__lt=F('minimalna_zasoba')).count()
+    
+    # Posledné pohyby
+    posledne_prijemky = PrijemkaNaSklad.objects.select_related('material').order_by('-datum')[:10]
+    posledne_vydajky = VydajkaZoSkladu.objects.select_related('material', 'objednavka').order_by('-datum')[:10]
+    
+    context = {
+        'materialy': materialy,
+        'celkom': celkom,
+        'pod_minimom': pod_minimom,
+        'posledne_prijemky': posledne_prijemky,
+        'posledne_vydajky': posledne_vydajky,
+    }
+    
+    return render(request, 'core/sklad_materialu.html', context)

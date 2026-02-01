@@ -1,0 +1,211 @@
+{% extends 'core/base.html' %}
+
+{% block content %}
+<div class="container-fluid py-4">
+    
+    <!-- Hlavička -->
+    <div class="d-flex justify-content-between align-items-center mb-4">
+        <div>
+            <h1 class="h3 mb-0">🏭 Sklad materiálu</h1>
+            <p class="text-muted mb-0">Evidencia surovín a komponentov</p>
+        </div>
+        <div class="btn-group" role="group">
+            <a href="{% url 'sklad_hotovych_dielov' %}" class="btn btn-outline-primary">📦 Hotové diely</a>
+            <a href="/admin/core/material/add/" class="btn btn-success">➕ Nový materiál</a>
+        </div>
+    </div>
+
+    <!-- Štatistické karty -->
+    <div class="row g-3 mb-4">
+        <div class="col-md-6">
+            <div class="card border-primary shadow-sm">
+                <div class="card-body">
+                    <div class="d-flex justify-content-between align-items-center">
+                        <div>
+                            <p class="text-muted mb-1 small">Celkom materiálov</p>
+                            <h3 class="mb-0">{{ celkom }}</h3>
+                        </div>
+                        <div class="fs-1 text-primary opacity-50">🏭</div>
+                    </div>
+                </div>
+            </div>
+        </div>
+
+        <div class="col-md-6">
+            <div class="card {% if pod_minimom > 0 %}border-danger{% else %}border-success{% endif %} shadow-sm">
+                <div class="card-body">
+                    <div class="d-flex justify-content-between align-items-center">
+                        <div>
+                            <p class="text-muted mb-1 small">Pod minimálnou zásobou</p>
+                            <h3 class="mb-0 {% if pod_minimom > 0 %}text-danger{% else %}text-success{% endif %}">
+                                {{ pod_minimom }}
+                            </h3>
+                            {% if pod_minimom > 0 %}
+                            <small class="text-danger">⚠️ Potrebné objednať!</small>
+                            {% endif %}
+                        </div>
+                        <div class="fs-1 {% if pod_minimom > 0 %}text-danger{% else %}text-success{% endif %} opacity-50">
+                            {% if pod_minimom > 0 %}⚠️{% else %}✅{% endif %}
+                        </div>
+                    </div>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <!-- Tabuľka materiálov -->
+    <div class="card shadow-sm mb-4">
+        <div class="card-header bg-primary text-white">
+            <h5 class="mb-0">📋 Skladové položky - Materiál</h5>
+        </div>
+        <div class="card-body p-0">
+            <div class="table-responsive">
+                <table class="table table-hover mb-0 align-middle">
+                    <thead class="table-light">
+                        <tr>
+                            <th>Názov materiálu</th>
+                            <th>Kód</th>
+                            <th>Typ</th>
+                            <th class="text-center">Aktuálna zásoba</th>
+                            <th class="text-center">Minimálna zásoba</th>
+                            <th class="text-center">Jednotka</th>
+                            <th class="text-center">Stav</th>
+                            <th class="text-end">Akcia</th>
+                        </tr>
+                    </thead>
+                    <tbody>
+                        {% for material in materialy %}
+                        <tr class="{% if material.aktualna_zasoba < material.minimalna_zasoba %}table-danger{% endif %}">
+                            <td class="fw-bold">{{ material.nazov }}</td>
+                            <td>de>{{ material.kod }}</code></td>
+                            <td>
+                                <span class="badge bg-secondary">{{ material.get_typ_display }}</span>
+                            </td>
+                            <td class="text-center">
+                                <span class="badge {% if material.aktualna_zasoba < material.minimalna_zasoba %}bg-danger{% else %}bg-success{% endif %} fs-6">
+                                    {{ material.aktualna_zasoba }}
+                                </span>
+                            </td>
+                            <td class="text-center text-muted">{{ material.minimalna_zasoba }}</td>
+                            <td class="text-center">{{ material.jednotka }}</td>
+                            <td class="text-center">
+                                {% if material.aktualna_zasoba < material.minimalna_zasoba %}
+                                    <span class="badge bg-danger">⚠️ Pod minimom</span>
+                                {% else %}
+                                    <span class="badge bg-success">✓ OK</span>
+                                {% endif %}
+                            </td>
+                            <td class="text-end">
+                                <div class="btn-group" role="group">
+                                    <a href="/admin/core/prijemkanasklad/add/?material={{ material.pk }}" 
+                                       class="btn btn-success btn-sm" title="Príjemka">➕</a>
+                                    <a href="/admin/core/vydajkazoskladu/add/?material={{ material.pk }}" 
+                                       class="btn btn-warning btn-sm" title="Výdajka">📤</a>
+                                    <a href="/admin/core/material/{{ material.pk }}/change/" 
+                                       class="btn btn-outline-primary btn-sm" title="Upraviť">✏️</a>
+                                </div>
+                            </td>
+                        </tr>
+                        {% empty %}
+                        <tr>
+                            <td colspan="8" class="text-center py-5">
+                                <h4 class="text-muted">Žiadne položky v sklade</h4>
+                                <p class="mb-0">Pridajte prvý materiál</p>
+                            </td>
+                        </tr>
+                        {% endfor %}
+                    </tbody>
+                </table>
+            </div>
+        </div>
+    </div>
+
+    <!-- Posledné pohyby -->
+    <div class="row g-3">
+        <!-- Príjemky -->
+        <div class="col-lg-6">
+            <div class="card shadow-sm">
+                <div class="card-header bg-success text-white">
+                    <h5 class="mb-0">📥 Posledné príjemky</h5>
+                </div>
+                <div class="card-body p-0">
+                    <div class="table-responsive">
+                        <table class="table table-sm mb-0">
+                            <thead class="table-light">
+                                <tr>
+                                    <th>Dátum</th>
+                                    <th>Materiál</th>
+                                    <th class="text-center">Množstvo</th>
+                                    <th>Dodávateľ</th>
+                                </tr>
+                            </thead>
+                            <tbody>
+                                {% for prijemka in posledne_prijemky %}
+                                <tr>
+                                    <td><small>{{ prijemka.datum|date:"d.m.Y H:i" }}</small></td>
+                                    <td>{{ prijemka.material.nazov }}</td>
+                                    <td class="text-center">
+                                        <span class="badge bg-success">+{{ prijemka.mnozstvo }} {{ prijemka.material.jednotka }}</span>
+                                    </td>
+                                    <td>{{ prijemka.dodavatel|default:"-" }}</td>
+                                </tr>
+                                {% empty %}
+                                <tr>
+                                    <td colspan="4" class="text-center py-3 text-muted">Žiadne príjemky</td>
+                                </tr>
+                                {% endfor %}
+                            </tbody>
+                        </table>
+                    </div>
+                </div>
+            </div>
+        </div>
+
+        <!-- Výdajky -->
+        <div class="col-lg-6">
+            <div class="card shadow-sm">
+                <div class="card-header bg-warning text-dark">
+                    <h5 class="mb-0">📤 Posledné výdajky</h5>
+                </div>
+                <div class="card-body p-0">
+                    <div class="table-responsive">
+                        <table class="table table-sm mb-0">
+                            <thead class="table-light">
+                                <tr>
+                                    <th>Dátum</th>
+                                    <th>Materiál</th>
+                                    <th class="text-center">Množstvo</th>
+                                    <th>Objednávka</th>
+                                </tr>
+                            </thead>
+                            <tbody>
+                                {% for vydajka in posledne_vydajky %}
+                                <tr>
+                                    <td><small>{{ vydajka.datum|date:"d.m.Y H:i" }}</small></td>
+                                    <td>{{ vydajka.material.nazov }}</td>
+                                    <td class="text-center">
+                                        <span class="badge bg-danger">-{{ vydajka.mnozstvo }} {{ vydajka.material.jednotka }}</span>
+                                    </td>
+                                    <td>
+                                        {% if vydajka.objednavka %}
+                                            <a href="{% url 'detail_zakazky' pk=vydajka.objednavka.pk %}">#{{ vydajka.objednavka.cislo_objednavky }}</a>
+                                        {% else %}
+                                            -
+                                        {% endif %}
+                                    </td>
+                                </tr>
+                                {% empty %}
+                                <tr>
+                                    <td colspan="4" class="text-center py-3 text-muted">Žiadne výdajky</td>
+                                </tr>
+                                {% endfor %}
+                            </tbody>
+                        </table>
+                    </div>
+                </div>
+            </div>
+        </div>
+    </div>
+
+</div>
+{% endblock %}

@@ -3,107 +3,115 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>ERP Kovovýroba</title>
+    <title>{% block title %}ERP Systém - Kovovýroba{% endblock %}</title>
+    
     <!-- Bootstrap CSS -->
     <link href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.0/dist/css/bootstrap.min.css" rel="stylesheet">
-    <!-- FontAwesome pre ikony (voliteľné, ale vyzerá to lepšie) -->
-    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.0.0/css/all.min.css">
+    <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/bootstrap-icons@1.10.0/font/bootstrap-icons.css">
     
     <style>
-        body { background-color: #f8f9fa; }
-        .navbar { box-shadow: 0 2px 4px rgba(0,0,0,0.1); }
-        .card { border: none; border-radius: 10px; }
+        body {
+            font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
+            background-color: #f8f9fa;
+        }
+        .navbar {
+            box-shadow: 0 2px 4px rgba(0,0,0,.1);
+        }
     </style>
+    
+    {% block extra_css %}{% endblock %}
 </head>
 <body>
-
-    <!-- Navigačné menu -->
-    <nav class="navbar navbar-expand-lg navbar-dark bg-dark mb-4">
-        <div class="container">
-            <a class="navbar-brand" href="/">⚙️ ERP Kovovýroba</a>
+    
+    <!-- Navigácia -->
+    <nav class="navbar navbar-expand-lg navbar-dark bg-primary">
+        <div class="container-fluid">
+            <a class="navbar-brand fw-bold" href="/">🏭 ERP Systém</a>
+            
             <button class="navbar-toggler" type="button" data-bs-toggle="collapse" data-bs-target="#navbarNav">
                 <span class="navbar-toggler-icon"></span>
             </button>
             
             <div class="collapse navbar-collapse" id="navbarNav">
                 <ul class="navbar-nav me-auto">
+                    <li class="nav-item">
+                        <a class="nav-link" href="/">🏠 Dashboard</a>
+                    </li>
+                    <li class="nav-item">
+                        <a class="nav-link" href="{% url 'plan_vyroby' %}">🏭 Plán výroby</a>
+                    </li>
                     
-                    <!-- PLÁN VÝROBY (Vidia všetci prihlásení) -->
-                    {% if user.is_authenticated %}
-                    <li class="nav-item">
-                        <a class="nav-link" href="{% url 'plan_vyroby' %}">📅 Plán výroby</a>
+                    <!-- SKLAD - NOVÉ -->
+                    <li class="nav-item dropdown">
+                        <a class="nav-link dropdown-toggle" href="#" role="button" data-bs-toggle="dropdown">
+                            📦 Sklad
+                        </a>
+                        <ul class="dropdown-menu">
+                            <li><a class="dropdown-item" href="{% url 'sklad_hotovych_dielov' %}">📦 Hotové diely</a></li>
+                            <li><a class="dropdown-item" href="{% url 'sklad_materialu' %}">🏭 Materiál</a></li>
+                            <li><hr class="dropdown-divider"></li>
+                            <li><a class="dropdown-item" href="/admin/core/prijemkahotovychdielov/">📥 Príjemky</a></li>
+                            <li><a class="dropdown-item" href="/admin/core/vydajkahotovychdielov/">📤 Výdajky</a></li>
+                        </ul>
                     </li>
-                    {% endif %}
-
-                    <!-- TECHNICKÁ SEKCIA (Vidia len tí s právami, napr. Manažér/Technológ) -->
-                    {% if perms.core.view_produkt %}
+                    
                     <li class="nav-item">
-                        <a class="nav-link" href="{% url 'zoznam_produktov' %}">📦 Produkty</a>
+                        <a class="nav-link" href="{% url 'zoznam_produktov' %}">📋 Produkty</a>
                     </li>
-                    <!-- NOVINKA: Odkaz na STROJE (dal som to pod rovnaké práva ako Produkty) -->
                     <li class="nav-item">
-                        <a class="nav-link" href="{% url 'zoznam_strojov' %}">🏭 Stroje</a>
+                        <a class="nav-link" href="{% url 'zoznam_strojov' %}">⚙️ Stroje</a>
                     </li>
-                    {% endif %}
-
-                    <!-- ADMIN (Len pre superusera) -->
-                    {% if user.is_superuser %}
-                    <li class="nav-item">
-                        <a class="nav-link text-warning" href="/admin/">🔧 Admin</a>
+                    
+                    <!-- Admin -->
+                    <li class="nav-item dropdown">
+                        <a class="nav-link dropdown-toggle" href="#" role="button" data-bs-toggle="dropdown">
+                            ⚙️ Administrácia
+                        </a>
+                        <ul class="dropdown-menu">
+                            <li><a class="dropdown-item" href="/admin/">🔧 Admin panel</a></li>
+                            <li><a class="dropdown-item" href="/operator/">👷 Operátorský panel</a></li>
+                        </ul>
                     </li>
-                    {% endif %}
                 </ul>
-
-                <!-- Pravá strana: Prihlásenie / Odhlásenie -->
+                
+                <!-- Pravá strana - User info -->
                 <ul class="navbar-nav">
                     {% if user.is_authenticated %}
-                        <li class="nav-item dropdown">
-                            <a class="nav-link dropdown-toggle" href="#" role="button" data-bs-toggle="dropdown">
-                                👤 {{ user.username }}
-                            </a>
-                            <ul class="dropdown-menu dropdown-menu-end">
-                                <li>
-                                    <form action="{% url 'logout' %}" method="post">
-                                        {% csrf_token %}
-                                        <button type="submit" class="dropdown-item text-danger">Odhlásiť sa</button>
-                                    </form>
-                                </li>
-                            </ul>
-                        </li>
+                    <li class="nav-item dropdown">
+                        <a class="nav-link dropdown-toggle" href="#" role="button" data-bs-toggle="dropdown">
+                            👤 {{ user.username }}
+                        </a>
+                        <ul class="dropdown-menu dropdown-menu-end">
+                            <li><a class="dropdown-item" href="/admin/password_change/">🔑 Zmeniť heslo</a></li>
+                            <li><hr class="dropdown-divider"></li>
+                            <li><a class="dropdown-item" href="/admin/logout/">🚪 Odhlásiť</a></li>
+                        </ul>
+                    </li>
                     {% else %}
-                        <li class="nav-item">
-                            <a class="btn btn-primary btn-sm" href="{% url 'login' %}">Prihlásiť sa</a>
-                        </li>
+                    <li class="nav-item">
+                        <a class="nav-link" href="/admin/login/">🔐 Prihlásiť</a>
+                    </li>
                     {% endif %}
                 </ul>
             </div>
         </div>
     </nav>
-
-    <!-- Hlavný obsah -->
-    <div class="container">
-        
-        <!-- Priestor pre správy (úspech/chyba) -->
-        {% if messages %}
-            {% for message in messages %}
-                <div class="alert alert-{{ message.tags }} alert-dismissible fade show" role="alert">
-                    {{ message }}
-                    <button type="button" class="btn-close" data-bs-dismiss="alert" aria-label="Close"></button>
-                </div>
-            {% endfor %}
-        {% endif %}
-
-        {% block content %}
-        <!-- Tu sa vloží obsah konkrétnej stránky -->
-        {% endblock %}
-    </div>
-
-    <!-- Pätička -->
-    <footer class="text-center text-muted py-4 mt-5">
-        <small>&copy; 2025 Kovovýroba ERP | Verzia 0.2</small>
+    
+    <!-- Obsah stránky -->
+    <main>
+        {% block content %}{% endblock %}
+    </main>
+    
+    <!-- Footer -->
+    <footer class="bg-light text-center py-3 mt-5">
+        <div class="container">
+            <small class="text-muted">© 2026 ERP Systém - Kovovýroba | Verzia 1.0</small>
+        </div>
     </footer>
-
+    
     <!-- Bootstrap JS -->
     <script src="https://cdn.jsdelivr.net/npm/bootstrap@5.3.0/dist/js/bootstrap.bundle.min.js"></script>
+    
+    {% block extra_js %}{% endblock %}
 </body>
 </html>
