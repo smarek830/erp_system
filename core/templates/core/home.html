@@ -1,0 +1,292 @@
+{% extends 'core/base.html' %}
+
+{% block content %}
+<div class="container-fluid py-4">
+    
+    <!-- Hlavička -->
+    <div class="d-flex justify-content-between align-items-center mb-4">
+        <div>
+            <h1 class="h3 mb-0">📊 Dashboard - Prehľad výroby</h1>
+            <small class="text-muted">{{ dnes|date:"l, d. F Y" }}</small>
+        </div>
+        <div class="btn-group" role="group">
+            <a href="{% url 'plan_vyroby' %}" class="btn btn-primary">🏭 Plán výroby</a>
+            <a href="/admin/core/objednavka/add/" class="btn btn-success">➕ Nová zakázka</a>
+        </div>
+    </div>
+
+    <!-- Štatistické karty -->
+    <div class="row g-3 mb-4">
+        <!-- Celkovo zakázok -->
+        <div class="col-md-3 col-sm-6">
+            <div class="card border-primary shadow-sm">
+                <div class="card-body">
+                    <div class="d-flex justify-content-between align-items-center">
+                        <div>
+                            <p class="text-muted mb-1 small">Aktívne zakázky</p>
+                            <h3 class="mb-0">{{ celkom_zakazok }}</h3>
+                        </div>
+                        <div class="fs-1 text-primary opacity-50">📦</div>
+                    </div>
+                </div>
+            </div>
+        </div>
+
+        <!-- Vo výrobe -->
+        <div class="col-md-3 col-sm-6">
+            <div class="card border-warning shadow-sm">
+                <div class="card-body">
+                    <div class="d-flex justify-content-between align-items-center">
+                        <div>
+                            <p class="text-muted mb-1 small">Vo výrobe</p>
+                            <h3 class="mb-0 text-warning">{{ vo_vyrobe }}</h3>
+                        </div>
+                        <div class="fs-1 text-warning opacity-50">⚙️</div>
+                    </div>
+                </div>
+            </div>
+        </div>
+
+        <!-- Nové -->
+        <div class="col-md-3 col-sm-6">
+            <div class="card border-info shadow-sm">
+                <div class="card-body">
+                    <div class="d-flex justify-content-between align-items-center">
+                        <div>
+                            <p class="text-muted mb-1 small">Nové zakázky</p>
+                            <h3 class="mb-0 text-info">{{ nove_zakazky }}</h3>
+                        </div>
+                        <div class="fs-1 text-info opacity-50">🆕</div>
+                    </div>
+                </div>
+            </div>
+        </div>
+
+        <!-- Pozastavené -->
+        <div class="col-md-3 col-sm-6">
+            <div class="card border-secondary shadow-sm">
+                <div class="card-body">
+                    <div class="d-flex justify-content-between align-items-center">
+                        <div>
+                            <p class="text-muted mb-1 small">Pozastavené</p>
+                            <h3 class="mb-0 text-secondary">{{ pozastavene }}</h3>
+                        </div>
+                        <div class="fs-1 text-secondary opacity-50">⏸️</div>
+                    </div>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <!-- Termíny a upozornenia -->
+    <div class="row g-3 mb-4">
+        <!-- Po termíne -->
+        <div class="col-md-4 col-sm-6">
+            <div class="card {% if po_termine > 0 %}bg-danger text-white{% else %}border-success{% endif %} shadow-sm">
+                <div class="card-body">
+                    <div class="d-flex justify-content-between align-items-center">
+                        <div>
+                            <p class="mb-1 small {% if po_termine > 0 %}text-white{% else %}text-muted{% endif %}">
+                                Po termíne ⚠️
+                            </p>
+                            <h3 class="mb-0">{{ po_termine }}</h3>
+                        </div>
+                        <div class="fs-1 opacity-50">🔴</div>
+                    </div>
+                </div>
+            </div>
+        </div>
+
+        <!-- Dnes termín -->
+        <div class="col-md-4 col-sm-6">
+            <div class="card border-warning shadow-sm">
+                <div class="card-body">
+                    <div class="d-flex justify-content-between align-items-center">
+                        <div>
+                            <p class="text-muted mb-1 small">Dnes termín</p>
+                            <h3 class="mb-0 text-warning">{{ dnes_termine }}</h3>
+                        </div>
+                        <div class="fs-1 text-warning opacity-50">📅</div>
+                    </div>
+                </div>
+            </div>
+        </div>
+
+        <!-- Tento týždeň -->
+        <div class="col-md-4 col-sm-6">
+            <div class="card border-primary shadow-sm">
+                <div class="card-body">
+                    <div class="d-flex justify-content-between align-items-center">
+                        <div>
+                            <p class="text-muted mb-1 small">Tento týždeň</p>
+                            <h3 class="mb-0 text-primary">{{ tento_tyzden_termine }}</h3>
+                        </div>
+                        <div class="fs-1 text-primary opacity-50">📆</div>
+                    </div>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <!-- Kontrakty a sklad -->
+    <div class="row g-3 mb-4">
+        <!-- Aktívne kontrakty -->
+        <div class="col-md-6">
+            <div class="card border-info shadow-sm">
+                <div class="card-body">
+                    <div class="d-flex justify-content-between align-items-center">
+                        <div>
+                            <p class="text-muted mb-1 small">Aktívne kontrakty</p>
+                            <h3 class="mb-0 text-info">{{ aktivne_kontrakty }}</h3>
+                            {% if kontrakt_exspiruje > 0 %}
+                            <small class="text-warning">
+                                <i class="bi bi-exclamation-triangle"></i>
+                                {{ kontrakt_exspiruje }} exspiruje do 30 dní
+                            </small>
+                            {% endif %}
+                        </div>
+                        <div class="fs-1 text-info opacity-50">📋</div>
+                    </div>
+                </div>
+            </div>
+        </div>
+
+        <!-- Materiál pod minimom -->
+        <div class="col-md-6">
+            <div class="card {% if material_pod_minimum > 0 %}border-danger{% else %}border-success{% endif %} shadow-sm">
+                <div class="card-body">
+                    <div class="d-flex justify-content-between align-items-center">
+                        <div>
+                            <p class="text-muted mb-1 small">Materiál pod minimom</p>
+                            <h3 class="mb-0 {% if material_pod_minimum > 0 %}text-danger{% else %}text-success{% endif %}">
+                                {{ material_pod_minimum }}
+                            </h3>
+                            {% if material_pod_minimum > 0 %}
+                            <small class="text-danger">
+                                <i class="bi bi-exclamation-triangle"></i>
+                                Potrebné objednať!
+                            </small>
+                            {% endif %}
+                        </div>
+                        <div class="fs-1 {% if material_pod_minimum > 0 %}text-danger{% else %}text-success{% endif %} opacity-50">
+                            📦
+                        </div>
+                    </div>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <!-- Tabuľky -->
+    <div class="row g-3">
+        <!-- Urgentné zakázky -->
+        <div class="col-lg-6">
+            <div class="card shadow-sm">
+                <div class="card-header bg-danger text-white">
+                    <h5 class="mb-0">🚨 Urgentné zakázky (do 3 dní)</h5>
+                </div>
+                <div class="card-body p-0">
+                    <div class="table-responsive">
+                        <table class="table table-hover mb-0">
+                            <thead class="table-light">
+                                <tr>
+                                    <th>Zakázka</th>
+                                    <th>Zákazník</th>
+                                    <th>Termín</th>
+                                    <th>Stav</th>
+                                </tr>
+                            </thead>
+                            <tbody>
+                                {% for zakazka in urgentne_zakazky %}
+                                <tr>
+                                    <td>
+                                        <a href="{% url 'detail_zakazky' pk=zakazka.pk %}" class="text-decoration-none fw-bold">
+                                            #{{ zakazka.cislo_objednavky }}
+                                        </a>
+                                    </td>
+                                    <td>{{ zakazka.zakaznik }}</td>
+                                    <td>
+                                        <span class="badge {% if zakazka.datum_pozadovane < dnes %}bg-danger{% elif zakazka.datum_pozadovane == dnes %}bg-warning text-dark{% else %}bg-primary{% endif %}">
+                                            {{ zakazka.datum_pozadovane|date:"d.m.Y" }}
+                                        </span>
+                                    </td>
+                                    <td>
+                                        {% if zakazka.stav == 'nova' %}
+                                            <span class="badge bg-primary">Nová</span>
+                                        {% elif zakazka.stav == 'vyroba' %}
+                                            <span class="badge bg-warning text-dark">Vo výrobe</span>
+                                        {% elif zakazka.stav == 'pozastavene' %}
+                                            <span class="badge bg-secondary">Pozastavené</span>
+                                        {% endif %}
+                                    </td>
+                                </tr>
+                                {% empty %}
+                                <tr>
+                                    <td colspan="4" class="text-center py-4 text-success">
+                                        <i class="bi bi-check-circle"></i> Žiadne urgentné zakázky! 🎉
+                                    </td>
+                                </tr>
+                                {% endfor %}
+                            </tbody>
+                        </table>
+                    </div>
+                </div>
+            </div>
+        </div>
+
+        <!-- Posledné zakázky -->
+        <div class="col-lg-6">
+            <div class="card shadow-sm">
+                <div class="card-header bg-primary text-white">
+                    <h5 class="mb-0">📝 Posledné zadané zakázky</h5>
+                </div>
+                <div class="card-body p-0">
+                    <div class="table-responsive">
+                        <table class="table table-hover mb-0">
+                            <thead class="table-light">
+                                <tr>
+                                    <th>Zakázka</th>
+                                    <th>Zákazník</th>
+                                    <th>Zadané</th>
+                                    <th>Stav</th>
+                                </tr>
+                            </thead>
+                            <tbody>
+                                {% for zakazka in posledne_zakazky %}
+                                <tr>
+                                    <td>
+                                        <a href="{% url 'detail_zakazky' pk=zakazka.pk %}" class="text-decoration-none fw-bold">
+                                            #{{ zakazka.cislo_objednavky }}
+                                        </a>
+                                    </td>
+                                    <td>{{ zakazka.zakaznik }}</td>
+                                    <td>
+                                        <small class="text-muted">{{ zakazka.datum_zadania|date:"d.m.Y" }}</small>
+                                    </td>
+                                    <td>
+                                        {% if zakazka.stav == 'nova' %}
+                                            <span class="badge bg-primary">Nová</span>
+                                        {% elif zakazka.stav == 'vyroba' %}
+                                            <span class="badge bg-warning text-dark">Vo výrobe</span>
+                                        {% elif zakazka.stav == 'pozastavene' %}
+                                            <span class="badge bg-secondary">Pozastavené</span>
+                                        {% endif %}
+                                    </td>
+                                </tr>
+                                {% empty %}
+                                <tr>
+                                    <td colspan="4" class="text-center py-4 text-muted">
+                                        Žiadne zakázky
+                                    </td>
+                                </tr>
+                                {% endfor %}
+                            </tbody>
+                        </table>
+                    </div>
+                </div>
+            </div>
+        </div>
+    </div>
+
+</div>
+{% endblock %}

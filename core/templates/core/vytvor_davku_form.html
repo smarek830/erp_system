@@ -1,0 +1,69 @@
+{% extends 'core/base.html' %}
+
+{% block content %}
+<div class="container py-4">
+    <div class="row justify-content-center">
+        <div class="col-md-8">
+            <div class="card shadow">
+                <div class="card-header bg-primary text-white">
+                    <h4 class="mb-0">📋 Vytvoriť výrobnú dávku z kontraktu</h4>
+                </div>
+                <div class="card-body">
+                    <!-- Info o kontrakte -->
+                    <div class="alert alert-info">
+                        <h5>Kontrakt: {{ kontrakt.cislo_kontraktu }}</h5>
+                        <p class="mb-1"><strong>Zákazník:</strong> {{ kontrakt.zakaznik }}</p>
+                        <p class="mb-1"><strong>Produkt:</strong> {{ kontrakt.produkt.nazov }} ({{ kontrakt.produkt.cislo_dielu }})</p>
+                        <p class="mb-1"><strong>Celkovo kusov:</strong> {{ kontrakt.pocet_kusov_celkovo }} ks</p>
+                        <p class="mb-0"><strong>Zostáva dodať:</strong> 
+                            <span class="badge bg-warning text-dark fs-6">{{ kontrakt.zostavajuce_mnozstvo }} ks</span>
+                        </p>
+                    </div>
+
+                    <!-- Formulár -->
+                    <form method="post">
+                        {% csrf_token %}
+                        
+                        <div class="mb-3">
+                            <label for="mnozstvo" class="form-label fw-bold">Množstvo v dávke (ks) *</label>
+                            <input type="number" class="form-control" id="mnozstvo" name="mnozstvo" 
+                                   min="1" max="{{ kontrakt.zostavajuce_mnozstvo }}" 
+                                   value="{{ kontrakt.zostavajuce_mnozstvo }}" required>
+                            <div class="form-text">Maximum: {{ kontrakt.zostavajuce_mnozstvo }} ks</div>
+                        </div>
+
+                        <div class="mb-3">
+                            <label for="termin_dni" class="form-label fw-bold">Termín dodania (dní od dnes) *</label>
+                            <input type="number" class="form-control" id="termin_dni" name="termin_dni" 
+                                   min="1" value="7" required>
+                            <div class="form-text">Počet dní, do kedy má byť dávka hotová</div>
+                        </div>
+
+                        <hr>
+
+                        <div class="d-flex gap-2">
+                            <button type="submit" class="btn btn-success flex-grow-1">
+                                ✅ Vytvoriť dávku a objednávku
+                            </button>
+                            <a href="{% url 'plan_vyroby' %}" class="btn btn-secondary">
+                                ❌ Zrušiť
+                            </a>
+                        </div>
+                    </form>
+                </div>
+            </div>
+
+            <!-- Info -->
+            <div class="alert alert-warning mt-3">
+                <strong>ℹ️ Informácia:</strong>
+                <ul class="mb-0">
+                    <li>Vytvorí sa <strong>výrobná dávka</strong> s automatickým číslom (napr. K001-D001)</li>
+                    <li>Automaticky sa vytvorí <strong>objednávka</strong> s týmto číslom</li>
+                    <li>Zostávajúce množstvo v kontrakte sa automaticky zníži</li>
+                    <li>Objednávka bude pripravená na výrobu</li>
+                </ul>
+            </div>
+        </div>
+    </div>
+</div>
+{% endblock %}

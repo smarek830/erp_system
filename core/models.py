@@ -122,9 +122,212 @@ class Kontrakt(models.Model):
             self.zostavajuce_mnozstvo = self.pocet_kusov_celkovo
         super().save(*args, **kwargs)
     
+    def get_vyrobene_davky_mnozstvo(self):
+        """Vráti celkové množstvo vo výrobných dávkach"""
+        from django.db.models import Sum
+        return self.vyrobne_davky.aggregate(Sum('mnozstvo_davky'))['mnozstvo_davky__sum'] or 0
+    
+    def get_dostupne_skladom(self):
+        """Vráti množstvo hotových dávek skladom"""
+        from django.db.models import Sum
+        hotove = self.vyrobne_davky.filter(stav='hotova').aggregate(Sum('mnozstvo_davky'))['mnozstvo_davky__sum'] or 0
+        return hotove
+    
     def __str__(self):
         return f"Kontrakt {self.cislo_kontraktu} - {self.zakaznik}"
+    
+    class Meta:
+        verbose_name = "Kontrakt"
+        verbose_name_plural = "Kontrakty"
 
+# 5A. MODEL: VÝROBNÁ DÁVKA Z KONTRAKTU
+class VyrobnaDavka(models.Model):
+    """Čiastková výroba z kontraktu - umožňuje vyrábať kontrakt po častiach"""
+    kontrakt = models.ForeignKey(Kontrakt, on_delete=models.CASCADE, related_name='vyrobne_davky')
+    cislo_davky = models.CharField(max_length=50, unique=True, verbose_name="Číslo výrobnej dávky")
+    
+    mnozstvo_davky = models.PositiveIntegerField(verbose_name="Množstvo v dávke (ks)")
+    datum_vytvorenia = models.DateField(default=timezone.now, verbose_name="Dátum vytvorenia")
+    pozadovany_termin = models.DateField(verbose_name="Požadovaný termín dodania")
+    
+    # Prepojenie s objednávkou (ak sa vytvorí)
+    objednavka = models.OneToOneField(
+        'Objednavka', 
+        on_delete=models.SET_NULL, 
+        null=True, 
+        blank=True, 
+        related_name='vyrobna_davka',
+        verbose_name="Vytvorená objednávka"
+    )
+    
+    stav = models.CharField(
+        max_length=20,
+        choices=[
+            ('planovana', '📋 Plánovaná'),
+            ('vo_vyrobe', '⚙️ Vo výrobe'),
+            ('hotova', '✅ Hotová'),
+            ('expedovana', '📦 Expedovaná'),
+        ],
+        default='planovana',
+        verbose_name="Stav dávky"
+    )
+    
+    poznamka = models.TextField(blank=True, verbose_name="Poznámka")
+    
+    def save(self, *args, **kwargs):
+        # Automaticky vygeneruj číslo dávky
+        if not self.cislo_davky:
+            pocet = VyrobnaDavka.objects.filter(kontrakt=self.kontrakt).count()
+            self.cislo_davky = f"{self.kontrakt.cislo_kontraktu}-D{pocet + 1:03d}"
+        super().save(*args, **kwargs)
+    
+    def vytvor_objednavku(self):
+        """Vytvorí objednávku z výrobnej dávky"""
+        if self.objednavka:
+            return self.objednavka
+        
+        objednavka = Objednavka.objects.create(
+            cislo_objednavky=self.cislo_davky,
+            zakaznik=self.kontrakt.zakaznik,
+            produkt=self.kontrakt.produkt,
+            mnozstvo=self.mnozstvo_davky,
+            datum_zadania=self.datum_vytvorenia,
+            datum_pozadovane=self.pozadovany_termin,
+            stav='nova',
+            poznamka=f"Výrobná dávka z kontraktu {self.kontrakt.cislo_kontraktu}"
+        )
+        
+        self.objednavka = objednavka
+        self.stav = 'vo_vyrobe'
+        self.save()
+        
+        return objednavka
+    
+    def __str__(self):
+        return f"{self.cislo_davky} - {self.mnozstvo_davky} ks ({self.get_stav_display()})"
+    
+    class Meta:
+        verbose_name = "Výrobná dávka"
+        verbose_name_plural = "Výrobné dávky"
+        ordering = ['-datum_vytvorenia']
+
+# 5B. MODEL: SKLAD HOTOVÝCH DIELOV
+class SkladHotovychDielov(models.Model):
+    """Evidencia hotových dielov na sklade"""
+    produkt = models.ForeignKey(Produkt, on_delete=models.PROTECT, verbose_name="Produkt")
+    mnozstvo = models.PositiveIntegerField(default=0, verbose_name="Množstvo na sklade (ks)")
+    
+    # Minimálna zásoba pre upozornenia
+    minimalna_zasoba = models.PositiveIntegerField(default=0, verbose_name="Minimálna zásoba (ks)")
+    optimalna_zasoba = models.PositiveIntegerField(default=100, verbose_name="Optimálna zásoba (ks)")
+    
+    # Dátumy
+    datum_poslednej_prijemky = models.DateTimeField(null=True, blank=True, verbose_name="Posledná príjemka")
+    datum_poslednej_vydajky = models.DateTimeField(null=True, blank=True, verbose_name="Posledná výdajka")
+    
+    poznamka = models.TextField(blank=True, verbose_name="Poznámka")
+    
+    def je_pod_minimom(self):
+        """Kontrola, či je zásoba pod minimom"""
+        return self.mnozstvo < self.minimalna_zasoba
+    
+    def je_nad_optimom(self):
+        """Kontrola, či je zásoba nad optimom (preplnený sklad)"""
+        return self.mnozstvo > self.optimalna_zasoba
+    
+    def potrebne_mnozstvo(self):
+        """Koľko treba vyrobiť na dosiahnutie optima"""
+        if self.mnozstvo >= self.optimalna_zasoba:
+            return 0
+        return self.optimalna_zasoba - self.mnozstvo
+    
+    def __str__(self):
+        return f"{self.produkt.nazov} - {self.mnozstvo} ks na sklade"
+    
+    class Meta:
+        verbose_name = "Sklad hotových dielov"
+        verbose_name_plural = "Sklad hotových dielov"
+        ordering = ['produkt__nazov']
+
+
+# 5C. MODEL: PRÍJEMKA HOTOVÝCH DIELOV
+class PrijemkaHotovychDielov(models.Model):
+    """Naskladnenie hotových dielov z výroby"""
+    sklad = models.ForeignKey(SkladHotovychDielov, on_delete=models.PROTECT, related_name='prijemky')
+    objednavka = models.ForeignKey(Objednavka, on_delete=models.CASCADE, null=True, blank=True, verbose_name="Objednávka")
+    
+    mnozstvo = models.PositiveIntegerField(verbose_name="Naskladnené množstvo (ks)")
+    datum = models.DateTimeField(default=timezone.now, verbose_name="Dátum príjemky")
+    operator = models.ForeignKey(User, on_delete=models.SET_NULL, null=True, verbose_name="Operátor")
+    
+    poznamka = models.TextField(blank=True, verbose_name="Poznámka")
+    
+    def save(self, *args, **kwargs):
+        # Automaticky zvýš zásobu
+        if not self.pk:
+            self.sklad.mnozstvo += self.mnozstvo
+            self.sklad.datum_poslednej_prijemky = self.datum
+            self.sklad.save()
+        super().save(*args, **kwargs)
+    
+    def __str__(self):
+        return f"Príjemka: {self.sklad.produkt.nazov} +{self.mnozstvo} ks ({self.datum.strftime('%d.%m.%Y')})"
+    
+    class Meta:
+        verbose_name = "Príjemka hotových dielov"
+        verbose_name_plural = "Príjemky hotových dielov"
+        ordering = ['-datum']
+
+
+# 5D. MODEL: VÝDAJKA HOTOVÝCH DIELOV
+class VydajkaHotovychDielov(models.Model):
+    """Vydanie hotových dielov zákazníkovi"""
+    sklad = models.ForeignKey(SkladHotovychDielov, on_delete=models.PROTECT, related_name='vydajky')
+    
+    # Môže byť priradená k objednávke alebo kontraktu
+    objednavka = models.ForeignKey(Objednavka, on_delete=models.CASCADE, null=True, blank=True, verbose_name="Objednávka")
+    kontrakt = models.ForeignKey(Kontrakt, on_delete=models.CASCADE, null=True, blank=True, verbose_name="Kontrakt")
+    vyrobna_davka = models.ForeignKey(VyrobnaDavka, on_delete=models.SET_NULL, null=True, blank=True, verbose_name="Výrobná dávka")
+    
+    zakaznik = models.CharField(max_length=100, verbose_name="Zákazník")
+    mnozstvo = models.PositiveIntegerField(verbose_name="Vydané množstvo (ks)")
+    datum = models.DateTimeField(default=timezone.now, verbose_name="Dátum výdajky")
+    
+    cislo_dodacieho_listu = models.CharField(max_length=100, blank=True, verbose_name="Číslo dodacieho listu")
+    operator = models.ForeignKey(User, on_delete=models.SET_NULL, null=True, verbose_name="Operátor")
+    
+    poznamka = models.TextField(blank=True, verbose_name="Poznámka")
+    
+    def save(self, *args, **kwargs):
+        # Automaticky zníž zásobu
+        if not self.pk:
+            if self.mnozstvo > self.sklad.mnozstvo:
+                raise ValueError(f"Nedostatok na sklade! Dostupné: {self.sklad.mnozstvo} ks")
+            
+            self.sklad.mnozstvo -= self.mnozstvo
+            self.sklad.datum_poslednej_vydajky = self.datum
+            self.sklad.save()
+            
+            # Ak je priradené k dávke, zníž zostávajúce množstvo kontraktu
+            if self.vyrobna_davka:
+                kontrakt = self.vyrobna_davka.kontrakt
+                kontrakt.zostavajuce_mnozstvo = max(0, kontrakt.zostavajuce_mnozstvo - self.mnozstvo)
+                kontrakt.save()
+                
+                # Označ dávku ako expedovanú
+                self.vyrobna_davka.stav = 'expedovana'
+                self.vyrobna_davka.save()
+        
+        super().save(*args, **kwargs)
+    
+    def __str__(self):
+        return f"Výdajka: {self.sklad.produkt.nazov} -{self.mnozstvo} ks pre {self.zakaznik}"
+    
+    class Meta:
+        verbose_name = "Výdajka hotových dielov"
+        verbose_name_plural = "Výdajky hotových dielov"
+        ordering = ['-datum']
+python manage.py makemigrations
 
 # 6. MODEL: VÝROBNÉ ZÁZNAMY
 class VyrobnyZaznam(models.Model):

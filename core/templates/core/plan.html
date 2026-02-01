@@ -3,124 +3,423 @@
 {% block content %}
 <div class="d-flex justify-content-between align-items-center mb-4">
     <h1 class="h3 mb-0">🏭 Plán výroby</h1>
-    <a href="/admin/core/objednavka/add/" class="btn btn-success btn-sm">➕ Nová zákazka</a>
-</div>
-
-<!-- ========================================== -->
-<!-- VERZIA PRE PC (Tabuľka) -->
-<!-- Zobrazí sa len na obrazovkách širších ako mobil -->
-<!-- ========================================== -->
-<div class="d-none d-md-block">
-    <div class="card shadow-sm">
-        <div class="card-body p-0">
-            <div class="table-responsive">
-                <table class="table table-hover mb-0 align-middle">
-                    <thead class="table-dark">
-                        <tr>
-                            <th>Termín</th>
-                            <th>Zákazka</th>
-                            <th>Zákazník</th>
-                            <th>Produkt</th>
-                            <th class="text-center">Množstvo</th>
-                            <th class="text-center">Stav</th>
-                            <th class="text-end">Akcia</th>
-                        </tr>
-                    </thead>
-                    <tbody>
-                        {% for obj in objednavky %}
-                        <tr class="{% if obj.stav == 'vyroba' %}table-warning{% endif %}">
-                            <td class="fw-bold text-danger">{{ obj.datum_pozadovane|date:"d.m.Y" }}</td>
-                            <td>
-                                <a href="{% url 'detail_zakazky' pk=obj.pk %}" class="text-decoration-none fw-bold">
-                                    #{{ obj.cislo_objednavky }}
-                                </a>
-                            </td>
-                            <td>{{ obj.zakaznik }}</td>
-                            <td>
-                                <div class="fw-bold">{{ obj.produkt.nazov }}</div>
-                                <small class="text-muted">{{ obj.produkt.cislo_dielu }}</small>
-                            </td>
-                            <td class="text-center h5 mb-0">{{ obj.mnozstvo }} ks</td>
-                            <td class="text-center">
-                                {% if obj.stav == 'nova' %}
-                                    <span class="badge bg-primary">Nová</span>
-                                {% elif obj.stav == 'vyroba' %}
-                                    <span class="badge bg-warning text-dark">Vo výrobe</span>
-                                {% elif obj.stav == 'pozastavene' %}
-                                    <span class="badge bg-secondary">Pozastavené</span>
-                                {% endif %}
-                            </td>
-                            <td class="text-end">
-                                <a href="/admin/core/objednavka/{{ obj.pk }}/change/" class="btn btn-outline-dark btn-sm">✏️</a>
-                            </td>
-                        </tr>
-                        {% empty %}
-                        <tr>
-                            <td colspan="7" class="text-center py-5">
-                                <h4 class="text-muted">🎉 Všetko je hotové!</h4>
-                                <p class="mb-0">Momentálne nie sú žiadne otvorené objednávky.</p>
-                            </td>
-                        </tr>
-                        {% endfor %}
-                    </tbody>
-                </table>
-            </div>
-        </div>
+    <div class="btn-group" role="group">
+        <a href="{% url 'export_plan_excel' %}" class="btn btn-success btn-sm">
+            📊 Export Excel
+        </a>
+        <a href="/admin/core/kontrakt/add/" class="btn btn-info btn-sm">📋 Nový kontrakt</a>
+        <a href="/admin/core/objednavka/add/" class="btn btn-primary btn-sm">➕ Nová zakázka</a>
     </div>
 </div>
 
-<!-- ========================================== -->
-<!-- VERZIA PRE MOBIL (Karty) -->
-<!-- Zobrazí sa len na malých obrazovkách -->
-<!-- ========================================== -->
-<div class="d-md-none">
-    {% for obj in objednavky %}
-    <div class="card mb-3 shadow-sm border-start border-4 {% if obj.stav == 'vyroba' %}border-warning{% else %}border-primary{% endif %}">
-        
-        <!-- Hlavička karty -->
-        <div class="card-header bg-white d-flex justify-content-between align-items-center py-2">
-            <span class="fw-bold text-dark">#{{ obj.cislo_objednavky }}</span>
-            <span class="badge {% if obj.stav == 'vyroba' %}bg-warning text-dark{% else %}bg-primary{% endif %}">
-                {{ obj.get_stav_display }}
-            </span>
-        </div>
-
-        <!-- Telo karty -->
-        <div class="card-body py-3">
-            <h5 class="card-title mb-1">{{ obj.zakaznik }}</h5>
+<!-- VYHĽADÁVACÍ A FILTROVACÍ PANEL -->
+<div class="card shadow-sm mb-4">
+    <div class="card-body">
+        <form method="get" action="{% url 'plan_vyroby' %}" class="row g-3">
+            <div class="col-md-4">
+                <label class="form-label fw-bold">🔍 Vyhľadávanie</label>
+                <input type="text" name="search" class="form-control" 
+                       placeholder="Číslo zakázky, zákazník, produkt..." 
+                       value="{{ search }}">
+            </div>
             
-            <div class="mb-3">
-                <span class="d-block fw-bold text-primary">{{ obj.produkt.nazov }}</span>
-                <small class="text-muted">{{ obj.produkt.cislo_dielu }}</small>
+            <div class="col-md-3">
+                <label class="form-label fw-bold">📊 Stav zakázky</label>
+                <select name="stav" class="form-select">
+                    <option value="">Všetky stavy</option>
+                    <option value="nova" {% if stav_filter == 'nova' %}selected{% endif %}>🆕 Nová</option>
+                    <option value="vyroba" {% if stav_filter == 'vyroba' %}selected{% endif %}>⚙️ Vo výrobe</option>
+                    <option value="pozastavene" {% if stav_filter == 'pozastavene' %}selected{% endif %}>⏸️ Pozastavené</option>
+                </select>
             </div>
-
-            <div class="d-flex justify-content-between align-items-end border-top pt-2">
-                <div>
-                    <small class="text-muted d-block">Množstvo</small>
-                    <span class="h4 mb-0">{{ obj.mnozstvo }} ks</span>
-                </div>
-                <div class="text-end">
-                    <small class="text-muted d-block">Termín</small>
-                    <span class="fw-bold text-danger">📅 {{ obj.datum_pozadovane|date:"d.m." }}</span>
-                </div>
+            
+            <div class="col-md-3">
+                <label class="form-label fw-bold">👤 Zákazník</label>
+                <select name="zakaznik" class="form-select">
+                    <option value="">Všetci zákazníci</option>
+                    {% for z in zakaznici %}
+                    <option value="{{ z }}" {% if zakaznik_filter == z %}selected{% endif %}>{{ z }}</option>
+                    {% endfor %}
+                </select>
             </div>
-        </div>
-
-        <!-- Pätička s tlačidlami -->
-        <div class="card-footer bg-light d-flex gap-2">
-            <a href="{% url 'detail_zakazky' pk=obj.pk %}" class="btn btn-primary flex-grow-1">
-                👁️ Detail
-            </a>
-            <a href="/admin/core/objednavka/{{ obj.pk }}/change/" class="btn btn-outline-secondary">
-                ✏️ Upraviť
-            </a>
-        </div>
+            
+            <div class="col-md-2 d-flex align-items-end gap-2">
+                <button type="submit" class="btn btn-primary flex-grow-1">Hľadať</button>
+                <a href="{% url 'plan_vyroby' %}" class="btn btn-outline-secondary">✕</a>
+            </div>
+        </form>
     </div>
-    {% empty %}
-    <div class="alert alert-success text-center py-4">
-        <h4>🎉 Hotovo!</h4>
-        <p>Žiadne aktívne zákazky.</p>
-    </div>
-    {% endfor %}
 </div>
+
+<!-- VERZIA PRE PC -->
+<div class="d-none d-md-block">
+    
+    <!-- KONTRAKTY -->
+    <div class="mb-5">
+        <div class="d-flex justify-content-between align-items-center mb-3">
+            <h2 class="h4 mb-0 text-primary">📋 Kontrakty (Dlhodobé zmluvy)</h2>
+            <span class="badge bg-primary fs-6">{{ kontrakty.count }} aktívnych</span>
+        </div>
+        
+        <div class="card shadow-sm">
+            <div class="card-body p-0">
+                <div class="table-responsive">
+                    <table class="table table-hover mb-0 align-middle">
+                        <thead class="table-primary">
+                            <tr>
+                                <th>Číslo kontraktu</th>
+                                <th>Zákazník</th>
+                                <th>Produkt</th>
+                                <th class="text-center">Celkovo kusov</th>
+                                <th class="text-center">Zostáva dodať</th>
+                                <th class="text-center">Progress</th>
+                                <th>Platnosť do</th>
+                                <th class="text-center">Skladom</th>
+                                <th class="text-end">Akcia</th>
+                            </tr>
+                        </thead>
+                        <tbody>
+                            {% for kontrakt in kontrakty %}
+                            <tr class="{% if kontrakt.datum_do < dnes|add:'days:7' %}table-warning{% endif %}">
+                                <td class="fw-bold">#{{ kontrakt.cislo_kontraktu }}</td>
+                                <td>{{ kontrakt.zakaznik }}</td>
+                                <td>
+                                    <div class="fw-bold">{{ kontrakt.produkt.nazov }}</div>
+                                    <small class="text-muted">{{ kontrakt.produkt.cislo_dielu }}</small>
+                                </td>
+                                <td class="text-center">{{ kontrakt.pocet_kusov_celkovo }} ks</td>
+                                <td class="text-center">
+                                    <span class="badge bg-info text-dark fs-6">
+                                        {{ kontrakt.zostavajuce_mnozstvo }} ks
+                                    </span>
+                                </td>
+                                <td class="text-center" style="min-width: 150px;">
+                                    <div class="progress" style="height: 25px;">
+                                        {% widthratio kontrakt.zostavajuce_mnozstvo kontrakt.pocet_kusov_celkovo -100 as percent %}
+                                        <div class="progress-bar bg-success" role="progressbar" 
+                                             style="width: {{ percent|add:100 }}%">
+                                            {{ percent|add:100 }}%
+                                        </div>
+                                    </div>
+                                </td>
+                                <td>
+                                    {% if kontrakt.datum_do < dnes %}
+                                        <span class="badge bg-danger">⚠️ {{ kontrakt.datum_do|date:"d.m.Y" }}</span>
+                                    {% elif kontrakt.datum_do < dnes|add:'days:7' %}
+                                        <span class="badge bg-warning text-dark">⚠️ {{ kontrakt.datum_do|date:"d.m.Y" }}</span>
+                                    {% elif kontrakt.datum_do < dnes|add:'days:30' %}
+                                        <span class="text-warning fw-bold">{{ kontrakt.datum_do|date:"d.m.Y" }}</span>
+                                    {% else %}
+                                        {{ kontrakt.datum_do|date:"d.m.Y" }}
+                                    {% endif %}
+                                </td>
+                                <td class="text-center">
+                                    {% if kontrakt.je_skladom %}
+                                        <span class="badge bg-success">✓ Áno</span>
+                                    {% else %}
+                                        <span class="badge bg-warning text-dark">⚠️ Nie</span>
+                                    {% endif %}
+                                </td>
+                                <td class="text-end">
+                                    <div class="btn-group" role="group">
+                                        <a href="{% url 'vytvor_davku_z_kontraktu' kontrakt_pk=kontrakt.pk %}" 
+                                           class="btn btn-success btn-sm" title="Vytvoriť výrobnú dávku">
+                                            ➕ Dávka
+                                        </a>
+                                        <a href="/admin/core/kontrakt/{{ kontrakt.pk }}/change/" 
+                                           class="btn btn-outline-primary btn-sm" title="Upraviť">
+                                            ✏️
+                                        </a>
+                                    </div>
+                                </td>
+                            </tr>
+                            {% empty %}
+                            <tr>
+                                <td colspan="9" class="text-center py-4">
+                                    <p class="text-muted mb-0">Žiadne aktívne kontrakty</p>
+                                </td>
+                            </tr>
+                            {% endfor %}
+                        </tbody>
+                    </table>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <!-- ZAKÁZKY -->
+    <div>
+        <div class="d-flex justify-content-between align-items-center mb-3">
+            <h2 class="h4 mb-0 text-success">🛒 Zakázky (Jednorazové objednávky)</h2>
+            <span class="badge bg-success fs-6">{{ zakazky.count }} aktívnych</span>
+        </div>
+        
+        <div class="card shadow-sm">
+            <div class="card-body p-0">
+                <div class="table-responsive">
+                    <table class="table table-hover mb-0 align-middle">
+                        <thead class="table-success">
+                            <tr>
+                                <th>Termín</th>
+                                <th>Zakázka</th>
+                                <th>Zákazník</th>
+                                <th>Produkt</th>
+                                <th class="text-center">Množstvo</th>
+                                <th class="text-center">Vyrobené</th>
+                                <th class="text-center">Stav</th>
+                                <th class="text-end">Akcia</th>
+                            </tr>
+                        </thead>
+                        <tbody>
+                            {% for obj in zakazky %}
+                            <tr class="{% if obj.stav == 'vyroba' %}table-warning{% elif obj.datum_pozadovane < dnes %}table-danger{% elif obj.datum_pozadovane == dnes %}table-warning{% elif obj.datum_pozadovane < dnes|add:'days:3' %}table-info{% endif %}">
+                                <td class="fw-bold">
+                                    {% if obj.datum_pozadovane < dnes %}
+                                        <span class="badge bg-danger fs-6">🔴 {{ obj.datum_pozadovane|date:"d.m.Y" }}</span>
+                                    {% elif obj.datum_pozadovane == dnes %}
+                                        <span class="badge bg-warning text-dark fs-6">⚠️ DNES</span>
+                                    {% elif obj.datum_pozadovane < dnes|add:'days:3' %}
+                                        <span class="badge bg-info fs-6">📅 {{ obj.datum_pozadovane|date:"d.m.Y" }}</span>
+                                    {% else %}
+                                        📅 {{ obj.datum_pozadovane|date:"d.m.Y" }}
+                                    {% endif %}
+                                </td>
+                                <td>
+                                    <a href="{% url 'detail_zakazky' pk=obj.pk %}" class="text-decoration-none fw-bold">
+                                        #{{ obj.cislo_objednavky }}
+                                    </a>
+                                </td>
+                                <td>{{ obj.zakaznik }}</td>
+                                <td>
+                                    <div class="fw-bold">{{ obj.produkt.nazov }}</div>
+                                    <small class="text-muted">{{ obj.produkt.cislo_dielu }}</small>
+                                </td>
+                                <td class="text-center h5 mb-0">{{ obj.mnozstvo }} ks</td>
+                                <td class="text-center">
+                                    <span class="badge bg-secondary">{{ obj.vyrobene_mnozstvo }} ks</span>
+                                    {% if obj.vyrobene_mnozstvo > 0 %}
+                                    <div class="progress mt-1" style="height: 5px;">
+                                        <div class="progress-bar bg-success" role="progressbar" 
+                                             style="width: {% widthratio obj.vyrobene_mnozstvo obj.mnozstvo 100 %}%"></div>
+                                    </div>
+                                    {% endif %}
+                                </td>
+                                <td class="text-center">
+                                    {% if obj.stav == 'nova' %}
+                                        <span class="badge bg-primary">🆕 Nová</span>
+                                    {% elif obj.stav == 'vyroba' %}
+                                        <span class="badge bg-warning text-dark">⚙️ Vo výrobe</span>
+                                    {% elif obj.stav == 'pozastavene' %}
+                                        <span class="badge bg-secondary">⏸️ Pozastavené</span>
+                                    {% endif %}
+                                </td>
+                                <td class="text-end">
+                                    <div class="btn-group" role="group">
+                                        <a href="{% url 'detail_zakazky' pk=obj.pk %}" 
+                                           class="btn btn-outline-info btn-sm">👁️</a>
+                                        <a href="/admin/core/objednavka/{{ obj.pk }}/change/" 
+                                           class="btn btn-outline-dark btn-sm">✏️</a>
+                                        {% if obj.stav == 'nova' %}
+                                        <a href="/operator/zakazka/{{ obj.pk }}/" 
+                                           class="btn btn-success btn-sm">▶️ Začať</a>
+                                        {% endif %}
+                                    </div>
+                                </td>
+                            </tr>
+                            {% empty %}
+                            <tr>
+                                <td colspan="8" class="text-center py-5">
+                                    <h4 class="text-muted">🎉 Všetko je hotové!</h4>
+                                    <p class="mb-0">Momentálne nie sú žiadne otvorené zakázky.</p>
+                                </td>
+                            </tr>
+                            {% endfor %}
+                        </tbody>
+                    </table>
+                </div>
+            </div>
+        </div>
+    </div>
+</div>
+
+<!-- VERZIA PRE MOBIL -->
+<div class="d-md-none">
+    
+    <!-- KONTRAKTY - MOBIL -->
+    <div class="mb-4">
+        <div class="d-flex justify-content-between align-items-center mb-3">
+            <h2 class="h5 mb-0 text-primary">📋 Kontrakty</h2>
+            <span class="badge bg-primary">{{ kontrakty.count }}</span>
+        </div>
+        
+        {% for kontrakt in kontrakty %}
+        <div class="card mb-3 shadow-sm border-start border-4 {% if kontrakt.datum_do < dnes|add:'days:7' %}border-warning{% else %}border-primary{% endif %}">
+            <div class="card-header bg-white d-flex justify-content-between align-items-center py-2">
+                <span class="fw-bold text-dark">#{{ kontrakt.cislo_kontraktu }}</span>
+                {% if kontrakt.je_skladom %}
+                    <span class="badge bg-success">✓ Skladom</span>
+                {% else %}
+                    <span class="badge bg-warning text-dark">⚠️ Vyrobiť</span>
+                {% endif %}
+            </div>
+            
+            <div class="card-body py-3">
+                <h6 class="card-title mb-2">{{ kontrakt.zakaznik }}</h6>
+                
+                <div class="mb-2">
+                    <span class="d-block fw-bold text-primary">{{ kontrakt.produkt.nazov }}</span>
+                    <small class="text-muted">{{ kontrakt.produkt.cislo_dielu }}</small>
+                </div>
+                
+                <!-- Progress bar -->
+                <div class="mb-2">
+                    <div class="d-flex justify-content-between mb-1">
+                        <small class="text-muted">Hotovo:</small>
+                        {% widthratio kontrakt.zostavajuce_mnozstvo kontrakt.pocet_kusov_celkovo -100 as percent %}
+                        <small class="fw-bold text-success">{{ percent|add:100 }}%</small>
+                    </div>
+                    <div class="progress" style="height: 20px;">
+                        <div class="progress-bar bg-success" role="progressbar" 
+                             style="width: {{ percent|add:100 }}%">
+                        </div>
+                    </div>
+                </div>
+                
+                <div class="row g-2 text-center border-top pt-2">
+                    <div class="col-4">
+                        <small class="text-muted d-block">Celkovo</small>
+                        <strong>{{ kontrakt.pocet_kusov_celkovo }} ks</strong>
+                    </div>
+                    <div class="col-4">
+                        <small class="text-muted d-block">Zostáva</small>
+                        <span class="badge bg-info text-dark">{{ kontrakt.zostavajuce_mnozstvo }} ks</span>
+                    </div>
+                    <div class="col-4">
+                        <small class="text-muted d-block">Platnosť</small>
+                        {% if kontrakt.datum_do < dnes %}
+                            <strong class="text-danger">⚠️ {{ kontrakt.datum_do|date:"d.m." }}</strong>
+                        {% elif kontrakt.datum_do < dnes|add:'days:7' %}
+                            <strong class="text-warning">⚠️ {{ kontrakt.datum_do|date:"d.m." }}</strong>
+                        {% else %}
+                            <strong>{{ kontrakt.datum_do|date:"d.m." }}</strong>
+                        {% endif %}
+                    </div>
+                </div>
+            </div>
+            
+            <div class="card-footer bg-light d-flex gap-2">
+                <a href="{% url 'vytvor_davku_z_kontraktu' kontrakt_pk=kontrakt.pk %}" 
+                   class="btn btn-success flex-grow-1">
+                    ➕ Vytvoriť dávku
+                </a>
+                <a href="/admin/core/kontrakt/{{ kontrakt.pk }}/change/" 
+                   class="btn btn-outline-primary">
+                    ✏️
+                </a>
+            </div>
+        </div>
+        {% empty %}
+        <div class="alert alert-info text-center">
+            <p class="mb-0">Žiadne aktívne kontrakty</p>
+        </div>
+        {% endfor %}
+    </div>
+
+    <!-- ZAKÁZKY - MOBIL -->
+    <div>
+        <div class="d-flex justify-content-between align-items-center mb-3">
+            <h2 class="h5 mb-0 text-success">🛒 Zakázky</h2>
+            <span class="badge bg-success">{{ zakazky.count }}</span>
+        </div>
+        
+        {% for obj in zakazky %}
+        <div class="card mb-3 shadow-sm border-start border-4 
+             {% if obj.datum_pozadovane < dnes %}border-danger
+             {% elif obj.datum_pozadovane == dnes %}border-warning
+             {% elif obj.stav == 'vyroba' %}border-warning
+             {% else %}border-success{% endif %}">
+            
+            <div class="card-header bg-white d-flex justify-content-between align-items-center py-2">
+                <span class="fw-bold text-dark">#{{ obj.cislo_objednavky }}</span>
+                
+                {% if obj.datum_pozadovane < dnes %}
+                    <span class="badge bg-danger">🔴 Po termíne</span>
+                {% elif obj.datum_pozadovane == dnes %}
+                    <span class="badge bg-warning text-dark">⚠️ DNES</span>
+                {% elif obj.stav == 'vyroba' %}
+                    <span class="badge bg-warning text-dark">⚙️ Vo výrobe</span>
+                {% else %}
+                    <span class="badge bg-primary">{{ obj.get_stav_display }}</span>
+                {% endif %}
+            </div>
+            
+            <div class="card-body py-3">
+                <h6 class="card-title mb-1">{{ obj.zakaznik }}</h6>
+                
+                <div class="mb-3">
+                    <span class="d-block fw-bold text-success">{{ obj.produkt.nazov }}</span>
+                    <small class="text-muted">{{ obj.produkt.cislo_dielu }}</small>
+                </div>
+                
+                <!-- Progress bar pre vyrobené -->
+                {% if obj.vyrobene_mnozstvo > 0 %}
+                <div class="mb-2">
+                    <div class="d-flex justify-content-between mb-1">
+                        <small class="text-muted">Vyrobené:</small>
+                        <small class="fw-bold">{{ obj.vyrobene_mnozstvo }}/{{ obj.mnozstvo }} ks 
+                            ({% widthratio obj.vyrobene_mnozstvo obj.mnozstvo 100 %}%)</small>
+                    </div>
+                    <div class="progress" style="height: 8px;">
+                        <div class="progress-bar bg-success" role="progressbar" 
+                             style="width: {% widthratio obj.vyrobene_mnozstvo obj.mnozstvo 100 %}%"></div>
+                    </div>
+                </div>
+                {% endif %}
+                
+                <div class="row g-2 border-top pt-2">
+                    <div class="col-4">
+                        <small class="text-muted d-block">Množstvo</small>
+                        <span class="h5 mb-0">{{ obj.mnozstvo }} ks</span>
+                    </div>
+                    <div class="col-4">
+                        <small class="text-muted d-block">Vyrobené</small>
+                        <span class="badge bg-secondary">{{ obj.vyrobene_mnozstvo }} ks</span>
+                    </div>
+                    <div class="col-4 text-end">
+                        <small class="text-muted d-block">Termín</small>
+                        {% if obj.datum_pozadovane < dnes %}
+                            <span class="fw-bold text-danger">🔴 {{ obj.datum_pozadovane|date:"d.m." }}</span>
+                        {% elif obj.datum_pozadovane == dnes %}
+                            <span class="fw-bold text-warning">⚠️ DNES</span>
+                        {% else %}
+                            <span class="fw-bold">📅 {{ obj.datum_pozadovane|date:"d.m." }}</span>
+                        {% endif %}
+                    </div>
+                </div>
+            </div>
+            
+            <div class="card-footer bg-light d-flex gap-2">
+                <a href="{% url 'detail_zakazky' pk=obj.pk %}" class="btn btn-info flex-grow-1">
+                    👁️ Detail
+                </a>
+                {% if obj.stav == 'nova' %}
+                <a href="/operator/zakazka/{{ obj.pk }}/" class="btn btn-success">
+                    ▶️ Začať
+                </a>
+                {% else %}
+                <a href="/admin/core/objednavka/{{ obj.pk }}/change/" class="btn btn-outline-secondary">
+                    ✏️
+                </a>
+                {% endif %}
+            </div>
+        </div>
+        {% empty %}
+        <div class="alert alert-success text-center py-4">
+            <h4>🎉 Hotovo!</h4>
+            <p>Žiadne aktívne zakázky.</p>
+        </div>
+        {% endfor %}
+    </div>
+</div>
+
 {% endblock %}
