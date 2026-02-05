@@ -36,3 +36,12 @@ urlpatterns = [
     path('api/operator/report-problem/<int:pk>/', views.report_problem, name='report_problem'),
     path('api/sprievodka/<int:pk>/', views.download_sprievodka, name='download_sprievodka'),
 ]
+    # Nové webové rozhrania
+    path('stroj/novy/', views.novy_stroj, name='novy_stroj'),
+    path('stroj/<int:pk>/upravit/', views.upravit_stroj, name='upravit_stroj'),
+    path('produkt/novy/', views.novy_produkt, name='novy_produkt'),
+    path('produkt/<int:pk>/upravit/', views.upravit_produkt, name='upravit_produkt'),
+    path('kontrakt/<int:kontrakt_pk>/davka/nova/', views.nova_vyrobna_davka, name='nova_vyrobna_davka'),
+    path('sklad/prijemka/nova/', views.nova_prijemka, name='nova_prijemka'),
+    path('sklad/vydajka/nova/', views.nova_vydajka, name='nova_vydajka'),
+]
