@@ -463,3 +463,113 @@ def sklad_materialu(request):
     }
     
     return render(request, 'core/sklad_materialu.html', context)
+
+
+# ========================================
+# WEB FORMULÁRE PRE OBJEDNÁVKY A KONTRAKTY
+# ========================================
+
+@login_required
+@permission_required("core.add_objednavka", raise_exception=True)
+def nova_objednavka(request):
+    """Vytvorenie novej objednávky cez webový formulár"""
+    from .forms import ObjednavkaForm
+    from django.contrib import messages
+    
+    if request.method == 'POST':
+        form = ObjednavkaForm(request.POST)
+        if form.is_valid():
+            objednavka = form.save(commit=False)
+            objednavka.stav = 'nova'
+            objednavka.vyrobene_mnozstvo = 0
+            objednavka.save()
+            
+            messages.success(request, f'✅ Objednávka #{objednavka.cislo_objednavky} bola úspešne vytvorená!')
+            return redirect('plan_vyroby')
+    else:
+        form = ObjednavkaForm()
+    
+    context = {
+        'form': form,
+        'title': 'Nová objednávka',
+        'submit_text': 'Vytvoriť objednávku',
+    }
+    return render(request, 'core/nova_objednavka.html', context)
+
+
+@login_required
+@permission_required("core.add_kontrakt", raise_exception=True)
+def novy_kontrakt(request):
+    """Vytvorenie nového kontraktu cez webový formulár"""
+    from .forms import KontraktForm
+    from django.contrib import messages
+    
+    if request.method == 'POST':
+        form = KontraktForm(request.POST)
+        if form.is_valid():
+            kontrakt = form.save()
+            messages.success(request, f'✅ Kontrakt #{kontrakt.cislo_kontraktu} bol úspešne vytvorený!')
+            return redirect('plan_vyroby')
+    else:
+        form = KontraktForm()
+    
+    context = {
+        'form': form,
+        'title': 'Nový kontrakt',
+        'submit_text': 'Vytvoriť kontrakt',
+    }
+    return render(request, 'core/novy_kontrakt.html', context)
+
+
+@login_required
+@permission_required("core.change_objednavka", raise_exception=True)
+def upravit_objednavku(request, pk):
+    """Úprava existujúcej objednávky"""
+    from .forms import ObjednavkaForm
+    from django.contrib import messages
+    
+    objednavka = get_object_or_404(Objednavka, pk=pk)
+    
+    if request.method == 'POST':
+        form = ObjednavkaForm(request.POST, instance=objednavka)
+        if form.is_valid():
+            form.save()
+            messages.success(request, f'✅ Objednávka #{objednavka.cislo_objednavky} bola aktualizovaná!')
+            return redirect('detail_zakazky', pk=objednavka.pk)
+    else:
+        form = ObjednavkaForm(instance=objednavka)
+    
+    context = {
+        'form': form,
+        'title': f'Upraviť objednávku #{objednavka.cislo_objednavky}',
+        'submit_text': 'Uložiť zmeny',
+        'objednavka': objednavka,
+    }
+    return render(request, 'core/nova_objednavka.html', context)
+
+
+@login_required
+@permission_required("core.change_kontrakt", raise_exception=True)
+def upravit_kontrakt(request, pk):
+    """Úprava existujúceho kontraktu"""
+    from .forms import KontraktForm
+    from django.contrib import messages
+    
+    kontrakt = get_object_or_404(Kontrakt, pk=pk)
+    
+    if request.method == 'POST':
+        form = KontraktForm(request.POST, instance=kontrakt)
+        if form.is_valid():
+            form.save()
+            messages.success(request, f'✅ Kontrakt #{kontrakt.cislo_kontraktu} bol aktualizovaný!')
+            return redirect('plan_vyroby')
+    else:
+        form = KontraktForm(instance=kontrakt)
+    
+    context = {
+        'form': form,
+        'title': f'Upraviť kontrakt #{kontrakt.cislo_kontraktu}',
+        'submit_text': 'Uložiť zmeny',
+        'kontrakt': kontrakt,
+    }
+    return render(request, 'core/novy_kontrakt.html', context)
