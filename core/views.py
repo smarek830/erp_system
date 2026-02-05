@@ -601,8 +601,7 @@ def novy_stroj(request):
         'submit_text': 'Vytvoriť stroj',
     }
     
-    return render(request, 'core/novy_stroj.html', context)
-
+    return render(request, 'core/form_universal.html', context)
 
 @login_required
 @permission_required("core.change_stroj", raise_exception=True)
@@ -629,8 +628,7 @@ def upravit_stroj(request, pk):
         'stroj': stroj,
     }
     
-    return render(request, 'core/novy_stroj.html', context)
-
+    return render(request, 'core/form_universal.html', context)
 
 # ========================================
 # WEBOVÉ ROZHRANIA PRE PRODUKTY
@@ -658,8 +656,7 @@ def novy_produkt(request):
         'submit_text': 'Vytvoriť produkt',
     }
     
-    return render(request, 'core/novy_produkt.html', context)
-
+    return render(request, 'core/form_universal.html', context)
 
 @login_required
 @permission_required("core.change_produkt", raise_exception=True)
@@ -720,8 +717,7 @@ def nova_vyrobna_davka(request, kontrakt_pk):
         'kontrakt': kontrakt,
     }
     
-    return render(request, 'core/nova_vyrobna_davka.html', context)
-
+    return render(request, 'core/form_universal.html', context)
 
 # ========================================
 # WEBOVÉ ROZHRANIA PRE SKLAD HOTOVÝCH DIELOV
@@ -751,8 +747,7 @@ def nova_prijemka(request):
         'submit_text': 'Naskladniť',
     }
     
-    return render(request, 'core/nova_prijemka.html', context)
-
+    return render(request, 'core/form_universal.html', context)
 
 @login_required
 @permission_required("core.add_vydajkahotovychdielov", raise_exception=True)
@@ -781,4 +776,4 @@ def nova_vydajka(request):
         'submit_text': 'Vydať',
     }
     
-    return render(request, 'core/nova_vydajka.html', context)
+    return render(request, 'core/form_universal.html', context)
