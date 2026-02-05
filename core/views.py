@@ -573,3 +573,212 @@ def upravit_kontrakt(request, pk):
         'kontrakt': kontrakt,
     }
     return render(request, 'core/novy_kontrakt.html', context)
+
+
+# ========================================
+# WEBOVÉ ROZHRANIA PRE STROJE
+# ========================================
+
+@login_required
+@permission_required("core.add_stroj", raise_exception=True)
+def novy_stroj(request):
+    """Vytvorenie nového stroja"""
+    from .forms import StrojForm
+    from django.contrib import messages
+    
+    if request.method == 'POST':
+        form = StrojForm(request.POST)
+        if form.is_valid():
+            form.save()
+            messages.success(request, f'✅ Stroj "{form.instance.nazov}" bol vytvorený!')
+            return redirect('zoznam_strojov')
+    else:
+        form = StrojForm()
+    
+    context = {
+        'form': form,
+        'title': 'Nový stroj',
+        'submit_text': 'Vytvoriť stroj',
+    }
+    
+    return render(request, 'core/novy_stroj.html', context)
+
+
+@login_required
+@permission_required("core.change_stroj", raise_exception=True)
+def upravit_stroj(request, pk):
+    """Úprava existujúceho stroja"""
+    from .forms import StrojForm
+    from django.contrib import messages
+    
+    stroj = get_object_or_404(Stroj, pk=pk)
+    
+    if request.method == 'POST':
+        form = StrojForm(request.POST, instance=stroj)
+        if form.is_valid():
+            form.save()
+            messages.success(request, f'✅ Stroj "{stroj.nazov}" bol aktualizovaný!')
+            return redirect('zoznam_strojov')
+    else:
+        form = StrojForm(instance=stroj)
+    
+    context = {
+        'form': form,
+        'title': f'Upraviť stroj #{stroj.nazov}',
+        'submit_text': 'Uložiť zmeny',
+        'stroj': stroj,
+    }
+    
+    return render(request, 'core/novy_stroj.html', context)
+
+
+# ========================================
+# WEBOVÉ ROZHRANIA PRE PRODUKTY
+# ========================================
+
+@login_required
+@permission_required("core.add_produkt", raise_exception=True)
+def novy_produkt(request):
+    """Vytvorenie nového produktu"""
+    from .forms import ProduktForm
+    from django.contrib import messages
+    
+    if request.method == 'POST':
+        form = ProduktForm(request.POST)
+        if form.is_valid():
+            form.save()
+            messages.success(request, f'✅ Produkt "{form.instance.nazov}" bol vytvorený!')
+            return redirect('zoznam_produktov')
+    else:
+        form = ProduktForm()
+    
+    context = {
+        'form': form,
+        'title': 'Nový produkt',
+        'submit_text': 'Vytvoriť produkt',
+    }
+    
+    return render(request, 'core/novy_produkt.html', context)
+
+
+@login_required
+@permission_required("core.change_produkt", raise_exception=True)
+def upravit_produkt(request, pk):
+    """Uprava existujúceho produktu"""
+    from .forms import ProduktForm
+    from django.contrib import messages
+    
+    produkt = get_object_or_404(Produkt, pk=pk)
+    
+    if request.method == 'POST':
+        form = ProduktForm(request.POST, instance=produkt)
+        if form.is_valid():
+            form.save()
+            messages.success(request, f'✅ Produkt "{produkt.nazov}" bol aktualizovaný!')
+            return redirect('detail_produkt', pk=produkt.pk)
+    else:
+        form = ProduktForm(instance=produkt)
+    
+    context = {
+        'form': form,
+        'title': f'Upraviť produkt #{produkt.nazov}',
+        'submit_text': 'Uložiť zmeny',
+        'produkt': produkt,
+    }
+    
+    return render(request, 'core/novy_produkt.html', context)
+
+
+# ========================================
+# WEBOVÉ ROZHRANIA PRE VÝROBNÉ DÁVKY
+# ========================================
+
+@login_required
+@permission_required("core.add_vyrobnadavka", raise_exception=True)
+def nova_vyrobna_davka(request, kontrakt_pk):
+    """Vytvorenie novej výrobnej dávky z kontraktu"""
+    from .forms import VyrobnaDavkaForm
+    from django.contrib import messages
+    
+    kontrakt = get_object_or_404(Kontrakt, pk=kontrakt_pk)
+    
+    if request.method == 'POST':
+        form = VyrobnaDavkaForm(request.POST)
+        if form.is_valid():
+            davka = form.save(commit=False)
+            davka.kontrakt = kontrakt
+            davka.save()
+            messages.success(request, f'✅ Výrobná dávka "{davka.cislo_davky}" bola vytvorená!')
+            return redirect('detail_kontrakt', pk=kontrakt.pk)
+    else:
+        form = VyrobnaDavkaForm()
+    
+    context = {
+        'form': form,
+        'title': f'Nová výrobná dávka pre kontrakt {kontrakt.cislo_kontraktu}',
+        'submit_text': 'Vytvoriť dávku',
+        'kontrakt': kontrakt,
+    }
+    
+    return render(request, 'core/nova_vyrobna_davka.html', context)
+
+
+# ========================================
+# WEBOVÉ ROZHRANIA PRE SKLAD HOTOVÝCH DIELOV
+# ========================================
+
+@login_required
+@permission_required("core.add_prijemkahotovychdielov", raise_exception=True)
+def nova_prijemka(request):
+    """Príjemka hotových dielov na sklad"""
+    from .forms import PrijemkaHotovychDielovForm
+    from django.contrib import messages
+    
+    if request.method == 'POST':
+        form = PrijemkaHotovychDielovForm(request.POST)
+        if form.is_valid():
+            prijemka = form.save(commit=False)
+            prijemka.operator = request.user
+            prijemka.save()
+            messages.success(request, f'✅ Príjemka +{prijemka.mnozstvo} ks bola zaznamemaná!')
+            return redirect('sklad_hotovych_dielov')
+    else:
+        form = PrijemkaHotovychDielovForm()
+    
+    context = {
+        'form': form,
+        'title': 'Nová príjemka',
+        'submit_text': 'Naskladniť',
+    }
+    
+    return render(request, 'core/nova_prijemka.html', context)
+
+
+@login_required
+@permission_required("core.add_vydajkahotovychdielov", raise_exception=True)
+def nova_vydajka(request):
+    """Výdajka hotových dielov zo skladu"""
+    from .forms import VydajkaHotovychDielovForm
+    from django.contrib import messages
+    
+    if request.method == 'POST':
+        form = VydajkaHotovychDielovForm(request.POST)
+        if form.is_valid():
+            try:
+                vydajka = form.save(commit=False)
+                vydajka.operator = request.user
+                vydajka.save()
+                messages.success(request, f'✅ Výdajka -{vydajka.mnozstvo} ks bola zaznamemaná!')
+                return redirect('sklad_hotovych_dielov')
+            except ValueError as e:
+                messages.error(request, f'❌ {str(e)}')
+    else:
+        form = VydajkaHotovychDielovForm()
+    
+    context = {
+        'form': form,
+        'title': 'Nová výdajka',
+        'submit_text': 'Vydať',
+    }
+    
+    return render(request, 'core/nova_vydajka.html', context)
