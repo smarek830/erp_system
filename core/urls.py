@@ -10,6 +10,12 @@ urlpatterns = [
     path('zakazka/<int:pk>/', views.detail_zakazky, name='detail_zakazky'),
     path('stroje/', views.zoznam_strojov, name='zoznam_strojov'),
     
+    # WEB FORMULÁRE - Nové objednávky a kontrakty
+    path('objednavka/nova/', views.nova_objednavka, name='nova_objednavka'),
+    path('objednavka/<int:pk>/upravit/', views.upravit_objednavku, name='upravit_objednavku'),
+    path('kontrakt/novy/', views.novy_kontrakt, name='novy_kontrakt'),
+    path('kontrakt/<int:pk>/upravit/', views.upravit_kontrakt, name='upravit_kontrakt'),
+    
     # SKLADY - NOVÉ
     path('sklad/', views.sklad_hotovych_dielov, name='sklad_hotovych_dielov'),
     path('sklad/material/', views.sklad_materialu, name='sklad_materialu'),
