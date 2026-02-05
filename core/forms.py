@@ -1,6 +1,6 @@
 # core/forms.py
 from django import forms
-from .models import Objednavka, Kontrakt, Produkt
+from .models import Objednavka, Kontrakt, Produkt, Stroj, VyrobnaDavka, PrijemkaHotovychDielov, VydajkaHotovychDielov
 from django.utils import timezone
 
 class ObjednavkaForm(forms.ModelForm):
@@ -132,3 +132,245 @@ class KontraktForm(forms.ModelForm):
             raise forms.ValidationError('Počet kusov musí byť väčší ako 0')
 
         return cleaned_data
+
+
+# FORMULÁRE PRE VÝROBNÉ DÁVKY
+class VyrobnaDavkaForm(forms.ModelForm):
+    """Formulár pre vytvorenie výrobnej dávky z kontraktu"""
+    
+    class Meta:
+        model = VyrobnaDavka
+        fields = [
+            'mnozstvo_davky',
+            'pozadovany_termin',
+            'poznamka'
+        ]
+        widgets = {
+            'mnozstvo_davky': forms.NumberInput(attrs={
+                'class': 'form-control',
+                'placeholder': 'Množstvo kusov v dávke',
+                'min': '1'
+            }),
+            'pozadovany_termin': forms.DateInput(attrs={
+                'class': 'form-control',
+                'type': 'date'
+            }),
+            'poznamka': forms.Textarea(attrs={
+                'class': 'form-control',
+                'rows': 3,
+                'placeholder': 'Poznámka k výrobnej dávke...'
+            }),
+        }
+        labels = {
+            'mnozstvo_davky': 'Množstvo v dávke (ks) *',
+            'pozadovany_termin': 'Požadovaný termín *',
+            'poznamka': 'Poznámka',
+        }
+
+
+# FORMULÁRE PRE STROJE
+class StrojForm(forms.ModelForm):
+    """Formulár pre vytvorenie a úpravu stroja"""
+    
+    class Meta:
+        model = Stroj
+        fields = [
+            'nazov',
+            'typ',
+            'status',
+            'hodinova_sadzba',
+            'datum_posledneho_servisu',
+        ]
+        widgets = {
+            'nazov': forms.TextInput(attrs={
+                'class': 'form-control',
+                'placeholder': 'Názov stroja'
+            }),
+            'typ': forms.TextInput(attrs={
+                'class': 'form-control',
+                'placeholder': 'Typ/Model'
+            }),
+            'status': forms.Select(attrs={
+                'class': 'form-select'
+            }),
+            'hodinova_sadzba': forms.NumberInput(attrs={
+                'class': 'form-control',
+                'step': '0.01',
+                'min': '0'
+            }),
+            'datum_posledneho_servisu': forms.DateInput(attrs={
+                'class': 'form-control',
+                'type': 'date'
+            }),
+        }
+        labels = {
+            'nazov': 'Názov stroja *',
+            'typ': 'Typ/Model',
+            'status': 'Stav *',
+            'hodinova_sadzba': 'Hodinová sadzba (€) *',
+            'datum_posledneho_servisu': 'Dátum posledného servisu',
+        }
+
+
+# FORMULÁRE PRE PRODUKTY
+class ProduktForm(forms.ModelForm):
+    """Formulár pre vytvorenie a úpravu produktu"""
+    
+    class Meta:
+        model = Produkt
+        fields = [
+            'nazov',
+            'cislo_dielu',
+            'cislo_vykresu',
+            'index',
+            'material',
+            'rozmer_polotovaru',
+            'spotreba_ks',
+            'cas_vyroby',
+            'norma_hod',
+        ]
+        widgets = {
+            'nazov': forms.TextInput(attrs={
+                'class': 'form-control',
+                'placeholder': 'Názov produktu'
+            }),
+            'cislo_dielu': forms.TextInput(attrs={
+                'class': 'form-control',
+                'placeholder': 'Číslo dielu'
+            }),
+            'cislo_vykresu': forms.TextInput(attrs={
+                'class': 'form-control',
+                'placeholder': 'Číslo výkresu'
+            }),
+            'index': forms.NumberInput(attrs={
+                'class': 'form-control',
+                'min': '0'
+            }),
+            'material': forms.TextInput(attrs={
+                'class': 'form-control',
+                'placeholder': 'Materiál'
+            }),
+            'rozmer_polotovaru': forms.TextInput(attrs={
+                'class': 'form-control',
+                'placeholder': 'Rozmer polotovaru'
+            }),
+            'spotreba_ks': forms.NumberInput(attrs={
+                'class': 'form-control',
+                'step': '0.01',
+                'min': '0'
+            }),
+            'cas_vyroby': forms.NumberInput(attrs={
+                'class': 'form-control',
+                'min': '0'
+            }),
+            'norma_hod': forms.NumberInput(attrs={
+                'class': 'form-control',
+                'min': '0'
+            }),
+        }
+        labels = {
+            'nazov': 'Názov produktu *',
+            'cislo_dielu': 'Číslo dielu *',
+            'cislo_vykresu': 'Číslo výkresu',
+            'index': 'Index zmeny',
+            'material': 'Materiál',
+            'rozmer_polotovaru': 'Rozmer polotovaru',
+            'spotreba_ks': 'Spotreba na kus',
+            'cas_vyroby': 'Čas výroby (min)',
+            'norma_hod': 'Norma (ks/hod)',
+        }
+
+
+# FORMULÁRE PRE SKLAD HOTOVÝCH DIELOV
+class PrijemkaHotovychDielovForm(forms.ModelForm):
+    """Formulár pre príjemku hotových dielov"""
+    
+    class Meta:
+        model = PrijemkaHotovychDielov
+        fields = [
+            'sklad',
+            'objednavka',
+            'mnozstvo',
+            'poznamka'
+        ]
+        widgets = {
+            'sklad': forms.Select(attrs={
+                'class': 'form-select'
+            }),
+            'objednavka': forms.Select(attrs={
+                'class': 'form-select'
+            }),
+            'mnozstvo': forms.NumberInput(attrs={
+                'class': 'form-control',
+                'min': '1'
+            }),
+            'poznamka': forms.Textarea(attrs={
+                'class': 'form-control',
+                'rows': 3,
+                'placeholder': 'Poznámka k príjemke...'
+            }),
+        }
+        labels = {
+            'sklad': 'Sklad *',
+            'objednavka': 'Objednávka',
+            'mnozstvo': 'Naskladnené množstvo (ks) *',
+            'poznamka': 'Poznámka',
+        }
+
+
+class VydajkaHotovychDielovForm(forms.ModelForm):
+    """Formulár pre výdajku hotových dielov"""
+    
+    class Meta:
+        model = VydajkaHotovychDielov
+        fields = [
+            'sklad',
+            'zakaznik',
+            'mnozstvo',
+            'objednavka',
+            'kontrakt',
+            'vyrobna_davka',
+            'cislo_dodacieho_listu',
+            'poznamka'
+        ]
+        widgets = {
+            'sklad': forms.Select(attrs={
+                'class': 'form-select'
+            }),
+            'zakaznik': forms.TextInput(attrs={
+                'class': 'form-control',
+                'placeholder': 'Názov zákazníka'
+            }),
+            'mnozstvo': forms.NumberInput(attrs={
+                'class': 'form-control',
+                'min': '1'
+            }),
+            'objednavka': forms.Select(attrs={
+                'class': 'form-select'
+            }),
+            'kontrakt': forms.Select(attrs={
+                'class': 'form-select'
+            }),
+            'vyrobna_davka': forms.Select(attrs={
+                'class': 'form-select'
+            }),
+            'cislo_dodacieho_listu': forms.TextInput(attrs={
+                'class': 'form-control',
+                'placeholder': 'Číslo dodacieho listu'
+            }),
+            'poznamka': forms.Textarea(attrs={
+                'class': 'form-control',
+                'rows': 3,
+                'placeholder': 'Poznámka k výdajke...'
+            }),
+        }
+        labels = {
+            'sklad': 'Sklad *',
+            'zakaznik': 'Zákazník *',
+            'mnozstvo': 'Vydané množstvo (ks) *',
+            'objednavka': 'Objednávka',
+            'kontrakt': 'Kontrakt',
+            'vyrobna_davka': 'Výrobná dávka',
+            'cislo_dodacieho_listu': 'Číslo dodacieho listu',
+            'poznamka': 'Poznámka',
+        }
