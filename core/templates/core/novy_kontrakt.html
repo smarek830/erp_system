@@ -1,0 +1,159 @@
+{% extends 'core/base.html' %}
+
+{% block content %}
+<div class="container-fluid py-4">
+    <div class="row justify-content-center">
+        <div class="col-lg-8 col-xl-6">
+            
+            <!-- Hlavička -->
+            <div class="d-flex justify-content-between align-items-center mb-4">
+                <h1 class="h3 mb-0">
+                    {% if kontrakt %}
+                        ✏️ {{ title }}
+                    {% else %}
+                        📋 {{ title }}
+                    {% endif %}
+                </h1>
+                <a href="{% url 'plan_vyroby' %}" class="btn btn-outline-secondary">
+                    ← Späť na plán
+                </a>
+            </div>
+
+            <!-- Správy -->
+            {% if messages %}
+                {% for message in messages %}
+                    <div class="alert alert-{{ message.tags }} alert-dismissible fade show" role="alert">
+                        {{ message }}
+                        <button type="button" class="btn-close" data-bs-dismiss="alert"></button>
+                    </div>
+                {% endfor %}
+            {% endif %}
+
+            <!-- Formulár -->
+            <div class="card shadow-sm">
+                <div class="card-body p-4">
+                    <form method="post" novalidate>
+                        {% csrf_token %}
+                        
+                        {% if form.non_field_errors %}
+                            <div class="alert alert-danger">
+                                {{ form.non_field_errors }}
+                            </div>
+                        {% endif %}
+
+                        <div class="row g-3">
+                            <!-- Číslo kontraktu -->
+                            <div class="col-md-6">
+                                <label for="{{ form.cislo_kontraktu.id_for_label }}" class="form-label fw-bold">
+                                    {{ form.cislo_kontraktu.label }}
+                                </label>
+                                {{ form.cislo_kontraktu }}
+                                {% if form.cislo_kontraktu.errors %}
+                                    <div class="text-danger small mt-1">
+                                        {{ form.cislo_kontraktu.errors }}
+                                    </div>
+                                {% endif %}
+                                <div class="form-text">Napr.: KONTR-2026-001</div>
+                            </div>
+
+                            <!-- Zákazník -->
+                            <div class="col-md-6">
+                                <label for="{{ form.zakaznik.id_for_label }}" class="form-label fw-bold">
+                                    {{ form.zakaznik.label }}
+                                </label>
+                                {{ form.zakaznik }}
+                                {% if form.zakaznik.errors %}
+                                    <div class="text-danger small mt-1">
+                                        {{ form.zakaznik.errors }}
+                                    </div>
+                                {% endif %}
+                            </div>
+
+                            <!-- Produkt -->
+                            <div class="col-12">
+                                <label for="{{ form.produkt.id_for_label }}" class="form-label fw-bold">
+                                    {{ form.produkt.label }}
+                                </label>
+                                {{ form.produkt }}
+                                {% if form.produkt.errors %}
+                                    <div class="text-danger small mt-1">
+                                        {{ form.produkt.errors }}
+                                    </div>
+                                {% endif %}
+                                <div class="form-text">Vyberte produkt zo zoznamu</div>
+                            </div>
+
+                            <!-- Celkový počet kusov -->
+                            <div class="col-12">
+                                <label for="{{ form.pocet_kusov_celkovo.id_for_label }}" class="form-label fw-bold">
+                                    {{ form.pocet_kusov_celkovo.label }}
+                                </label>
+                                {{ form.pocet_kusov_celkovo }}
+                                {% if form.pocet_kusov_celkovo.errors %}
+                                    <div class="text-danger small mt-1">
+                                        {{ form.pocet_kusov_celkovo.errors }}
+                                    </div>
+                                {% endif %}
+                                <div class="form-text">Celkový počet kusov, ktoré budú vyrobené počas trvania kontraktu</div>
+                            </div>
+
+                            <!-- Dátum od -->
+                            <div class="col-md-6">
+                                <label for="{{ form.datum_od.id_for_label }}" class="form-label fw-bold">
+                                    {{ form.datum_od.label }}
+                                </label>
+                                {{ form.datum_od }}
+                                {% if form.datum_od.errors %}
+                                    <div class="text-danger small mt-1">
+                                        {{ form.datum_od.errors }}
+                                    </div>
+                                {% endif %}
+                            </div>
+
+                            <!-- Dátum do -->
+                            <div class="col-md-6">
+                                <label for="{{ form.datum_do.id_for_label }}" class="form-label fw-bold">
+                                    {{ form.datum_do.label }}
+                                </label>
+                                {{ form.datum_do }}
+                                {% if form.datum_do.errors %}
+                                    <div class="text-danger small mt-1">
+                                        {{ form.datum_do.errors }}
+                                    </div>
+                                {% endif %}
+                            </div>
+
+                            <!-- Je skladom checkbox -->
+                            <div class="col-12">
+                                <div class="form-check">
+                                    {{ form.je_skladom }}
+                                    <label class="form-check-label" for="{{ form.je_skladom.id_for_label }}">
+                                        {{ form.je_skladom.label }}
+                                    </label>
+                                </div>
+                                {% if form.je_skladom.errors %}
+                                    <div class="text-danger small mt-1">
+                                        {{ form.je_skladom.errors }}
+                                    </div>
+                                {% endif %}
+                                <div class="form-text">Zaškrtnite, ak budú hotové diely skladom a budú sa dodávať podľa potreby</div>
+                            </div>
+                        </div>
+
+                        <!-- Tlačidľ -->
+                        <div class="d-flex gap-2 mt-4">
+                            <button type="submit" class="btn btn-primary px-4">
+                                ✔️ {{ submit_text }}
+                            </button>
+                            <a href="{% url 'plan_vyroby' %}" class="btn btn-outline-secondary">
+                                Zrušiť
+                            </a>
+                        </div>
+                    </form>
+                </div>
+            </div>
+
+        </div>
+    </div>
+</div>
+{% endblock %}
