@@ -1,3 +1,5 @@
+from multiprocessing import context
+from urllib import request
 from django.contrib.auth.decorators import login_required, permission_required
 from django.shortcuts import render, get_object_or_404, redirect
 from .models import (
@@ -601,6 +603,13 @@ def novy_stroj(request):
         'submit_text': 'Vytvoriť stroj',
     }
     
+    # Namiesto form_universal.html použite:
+    return render(request, 'core/novy_stroj.html', context)
+    return render(request, 'core/upravit_stroj.html', context)
+    return render(request, 'core/novy_produkt.html', context)
+    return render(request, 'core/nova_vyrobna_davka.html', context)
+    return render(request, 'core/nova_prijemka.html', context)
+    return render(request, 'core/nova_vydajka.html', context)
     return render(request, 'core/form_universal.html', context)
 
 @login_required
