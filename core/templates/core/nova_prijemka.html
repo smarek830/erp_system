@@ -1,0 +1,71 @@
+
+{% extends 'core/base.html' %}
+
+{% block content %}
+<div class="container-fluid py-4">
+    <div class="row justify-content-center">
+        <div class="col-lg-8 col-xl-6">
+            
+            <div class="d-flex justify-content-between align-items-center mb-4">
+                <h1 class="h3 mb-0">📥 Nová príjemka</h1>
+                <a href="{% url 'sklad_hotovych_dielov' %}" class="btn btn-outline-secondary">← Späť na sklad</a>
+            </div>
+            
+            {% if messages %}
+                {% for message in messages %}
+                    <div class="alert alert-{{ message.tags }} alert-dismissible fade show" role="alert">
+                        {{ message }}
+                        <button type="button" class="btn-close" data-bs-dismiss="alert"></button>
+                    </div>
+                {% endfor %}
+            {% endif %}
+            
+            <div class="card shadow-sm">
+                <div class="card-body p-4">
+                    <form method="post" novalidate>
+                        {% csrf_token %}
+                        
+                        {% if form.non_field_errors %}
+                            <div class="alert alert-danger">{{ form.non_field_errors }}</div>
+                        {% endif %}
+                        
+                        <div class="row g-3">
+                            <div class="col-md-6">
+                                <label for="{{ form.sklad.id_for_label }}" class="form-label">{{ form.sklad.label }}</label>
+                                {{ form.sklad }}
+                                {% if form.sklad.errors %}<div class="invalid-feedback d-block">{{ form.sklad.errors }}</div>{% endif %}
+                            </div>
+                            
+                            <div class="col-md-6">
+                                <label for="{{ form.objednavka.id_for_label }}" class="form-label">{{ form.objednavka.label }}</label>
+                                {{ form.objednavka }}
+                                {% if form.objednavka.errors %}<div class="invalid-feedback d-block">{{ form.objednavka.errors }}</div>{% endif %}
+                            </div>
+                            
+                            <div class="col-12">
+                                <label for="{{ form.mnozstvo.id_for_label }}" class="form-label">{{ form.mnozstvo.label }}</label>
+                                {{ form.mnozstvo }}
+                                {% if form.mnozstvo.errors %}<div class="invalid-feedback d-block">{{ form.mnozstvo.errors }}</div>{% endif %}
+                            </div>
+                            
+                            <div class="col-12">
+                                <label for="{{ form.poznamka.id_for_label }}" class="form-label">{{ form.poznamka.label }}</label>
+                                {{ form.poznamka }}
+                                {% if form.poznamka.errors %}<div class="invalid-feedback d-block">{{ form.poznamka.errors }}</div>{% endif %}
+                            </div>
+                            
+                            <div class="col-12">
+                                <hr class="my-4">
+                                <div class="d-flex gap-2 justify-content-end">
+                                    <a href="{% url 'sklad_hotovych_dielov' %}" class="btn btn-outline-secondary">Zrušiť</a>
+                                    <button type="submit" class="btn btn-success">📥 Naskladniť</button>
+                                </div>
+                            </div>
+                        </div>
+                    </form>
+                </div>
+            </div>
+        </div>
+    </div>
+</div>
+{% endblock %}
