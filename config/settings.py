@@ -131,3 +131,5 @@ STATIC_URL = 'static/'
 
 LOGIN_REDIRECT_URL = '/' # Alebo kam chceš po prihlásení
 LOGOUT_REDIRECT_URL = '/accounts/login/'
+
+APP_VERSION = "0.1.0"

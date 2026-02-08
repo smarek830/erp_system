@@ -203,9 +203,18 @@ def home(request):
         'material_pod_minimum': material_pod_minimum, 'dnes': dnes,
     })
 
+@login_required
+@permission_required("core.view_stroj", raise_exception=True)
 def zoznam_strojov(request):
-    stroje = Stroj.objects.all().order_by('nazov')
-    return render(request, 'core/stroje.html', {'stroje': stroje})
+    """Zoznam všetkých strojov."""
+    stroje = Stroj.objects.all().order_by("nazov")
+    context = {
+        "stroje": stroje,
+        "title": "Zoznam strojov",
+    }
+    return render(request, "core/zoznam_strojov.html", context)
+
+
 
 @login_required
 def operator_dashboard(request):
@@ -587,26 +596,27 @@ def novy_stroj(request):
     """Vytvorenie nového stroja"""
     from .forms import StrojForm
     from django.contrib import messages
-    
-    if request.method == 'POST':
+
+    if request.method == "POST":
         form = StrojForm(request.POST)
         if form.is_valid():
-            form.save()
-            messages.success(request, f'✅ Stroj "{form.instance.nazov}" bol vytvorený!')
-            return redirect('zoznam_strojov')
+            stroj = form.save()
+            messages.success(request, f'✅ Stroj "{stroj.nazov}" bol vytvorený!')
+            return redirect("zoznam_strojov")
     else:
         form = StrojForm()
-    
+
     context = {
-        'form': form,
-        'title': 'Nový stroj',
-        'submit_text': 'Vytvoriť stroj',
+        "form": form,
+        "title": "Nový stroj",
+        "submit_text": "Vytvoriť stroj",
     }
+
+    return render(request, "core/novy_stroj.html", context)
+
     
     # Namiesto form_universal.html použite:
     return render(request, 'core/novy_stroj.html', context)
-    return render(request, 'core/upravit_stroj.html', context)
-    return render(request, 'core/novy_produkt.html', context)
     return render(request, 'core/nova_vyrobna_davka.html', context)
     return render(request, 'core/nova_prijemka.html', context)
     return render(request, 'core/nova_vydajka.html', context)
@@ -618,26 +628,27 @@ def upravit_stroj(request, pk):
     """Úprava existujúceho stroja"""
     from .forms import StrojForm
     from django.contrib import messages
-    
+
     stroj = get_object_or_404(Stroj, pk=pk)
-    
-    if request.method == 'POST':
+
+    if request.method == "POST":
         form = StrojForm(request.POST, instance=stroj)
         if form.is_valid():
-            form.save()
+            stroj = form.save()
             messages.success(request, f'✅ Stroj "{stroj.nazov}" bol aktualizovaný!')
-            return redirect('zoznam_strojov')
+            return redirect("zoznam_strojov")
     else:
         form = StrojForm(instance=stroj)
-    
+
     context = {
-        'form': form,
-        'title': f'Upraviť stroj #{stroj.nazov}',
-        'submit_text': 'Uložiť zmeny',
-        'stroj': stroj,
+        "form": form,
+        "title": f'Upraviť stroj: {stroj.nazov}',
+        "submit_text": "Uložiť zmeny",
+        "stroj": stroj,
     }
-    
-    return render(request, 'core/form_universal.html', context)
+
+    return render(request, "core/upravit_stroj.html", context)
+
 
 # ========================================
 # WEBOVÉ ROZHRANIA PRE PRODUKTY
