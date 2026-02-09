@@ -1,0 +1,112 @@
+{% extends "core/base.html" %}
+
+{% block page_title %}⚙️ Stroje – prehľad{% endblock %}
+
+{% block content %}
+<div class="container py-4">
+  <div class="d-flex justify-content-between align-items-center mb-3">
+    <h2 class="h4 mb-0">Stroje</h2>
+    <a href="{% url 'novy_stroj' %}" class="btn btn-primary btn-sm">
+      + Nový stroj
+    </a>
+  </div>
+
+  <div class="table-responsive">
+    <table class="table table-hover align-middle">
+      <thead class="table-light">
+        <tr>
+          <th>Názov / typ</th>
+          <th>Stav</th>
+          <th>Posledný servis</th>
+          <th>Najbližší servis</th>
+          <th>Vyťaženosť</th>
+          <th>Hodinová sadzba</th>
+          <th></th>
+        </tr>
+      </thead>
+      <tbody>
+        {% for stroj in stroje %}
+        <tr>
+          <!-- Názov + typ -->
+          <td>
+            <div class="fw-semibold">{{ stroj.nazov }}</div>
+            {% if stroj.typ %}
+              <small class="text-muted">{{ stroj.typ }}</small>
+            {% endif %}
+          </td>
+
+          <!-- Stav podľa tvojich STATUS_CHOICES -->
+          <td>
+            {% if stroj.status == "OK" %}
+              <span class="badge bg-success">🟢 Funkčný</span>
+            {% elif stroj.status == "PORUCHA" %}
+              <span class="badge bg-danger">🔴 Porucha</span>
+            {% elif stroj.status == "SERVIS" %}
+              <span class="badge bg-warning text-dark">🟡 V servise</span>
+            {% else %}
+              <span class="badge bg-secondary">Neznámy</span>
+            {% endif %}
+          </td>
+
+          <!-- Posledný servis -->
+          <td>
+            {% if stroj.datum_posledneho_servisu %}
+              {{ stroj.datum_posledneho_servisu|date:"d.m.Y" }}
+            {% else %}
+              <span class="text-muted small">nezadané</span>
+            {% endif %}
+          </td>
+
+          <!-- Najbližší servis – zatiaľ odhad, napr. + 180 dní -->
+          <td>
+            {% if stroj.datum_posledneho_servisu %}
+              {# jednoduchý odhad – reálne potom vyriešime v modeli/metóde #}
+              <span class="text-muted small">
+                cca {{ stroj.datum_posledneho_servisu|date:"d.m.Y" }} + interval
+              </span>
+            {% else %}
+              <span class="text-muted small">nezadané</span>
+            {% endif %}
+          </td>
+          <!-- Vyťaženosť – placeholder, neskôr dopočítame z dát -->
+          <td style="min-width: 160px;">
+            <div class="progress" style="height: 16px;">
+              <div class="progress-bar
+                    {% if stroj.vytazenost < 60 %}bg-success
+                    {% elif stroj.vytazenost < 90 %}bg-warning text-dark
+                    {% else %}bg-danger{% endif %}"
+                  role="progressbar"
+                  style="width: {{ stroj.vytazenost }}%;">
+                <span class="small">{{ stroj.vytazenost }}%</span>
+              </div>
+            </div>
+          </td>
+          <!-- Cena za hodinu -->
+          <td>
+            {{ stroj.hodinova_sadzba }} €
+          </td>
+
+          <!-- Akcie -->
+          <td class="text-end">
+            {% if stroj.manual_pdf %}
+              <a href="{{ stroj.manual_pdf.url }}" class="btn btn-outline-secondary btn-sm" target="_blank">
+                📄 Manuál
+              </a>
+            {% endif %}
+            <a href="{% url 'upravit_stroj' stroj.pk %}" class="btn btn-outline-primary btn-sm">
+              Upraviť
+            </a>
+          </td>
+        </tr>
+        {% empty %}
+        <tr>
+          <td colspan="7" class="text-center text-muted py-4">
+            Zatiaľ nie sú evidované žiadne stroje.
+          </td>
+        </tr>
+        {% endfor %}
+      </tbody>
+    </table>
+  </div>
+</div>
+{% endblock %}

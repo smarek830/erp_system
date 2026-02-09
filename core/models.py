@@ -1,6 +1,8 @@
 from django.db import models
 from django.utils import timezone
 from django.contrib.auth.models import User
+from django.utils import timezone
+from datetime import timedelta
 
 # 1. MODEL: STROJE
 class Stroj(models.Model):
@@ -23,6 +25,46 @@ class Stroj(models.Model):
     class Meta:
         verbose_name = "Stroj"
         verbose_name_plural = "Stroje"
+
+    def vytazenost_poslednych_7_dni(self):
+        """
+        Vráti odhad vyťaženosti stroja za posledných 7 dní v percentách
+        (pomer času v prevádzke k celkovému času 7 dní).
+        """
+        from .models import VyrobnyZaznam  # aby sme sa vyhli cyklickým importom
+
+        koniec = timezone.now()
+        zaciatok = koniec - timedelta(days=7)
+        celkovy_interval_hodiny = 7 * 24
+
+        # Záznamy pre tento stroj (cez operácie)
+        zaznamy = VyrobnyZaznam.objects.filter(
+            operacia__stroj=self,
+            cas_zaznamu__gte=zaciatok,
+            cas_zaznamu__lte=koniec,
+        ).order_by("cas_zaznamu")
+
+        # Prejdeme START/STOP a spočítame čistý čas v práci
+        posledny_start = None
+        odrobene_sekundy = 0
+
+        for z in zaznamy:
+            if z.typ_udalosti == "START":
+                posledny_start = z.cas_zaznamu
+            elif z.typ_udalosti == "STOP" and posledny_start:
+                odrobene_sekundy += (z.cas_zaznamu - posledny_start).total_seconds()
+                posledny_start = None
+
+        # Ak je stále rozrobená operácia (START bez STOP)
+        if posledny_start:
+            odrobene_sekundy += (koniec - posledny_start).total_seconds()
+
+        odrobene_hodiny = odrobene_sekundy / 3600
+        if celkovy_interval_hodiny == 0:
+            return 0
+
+        percenta = int(min(100, round((odrobene_hodiny / celkovy_interval_hodiny) * 100)))
+        return percenta    
 
 
 # 2. MODEL: PRODUKTY

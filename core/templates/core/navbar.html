@@ -1,0 +1,72 @@
+<nav class="navbar navbar-expand-lg navbar-dark bg-primary">
+  <div class="container-fluid">
+    <a class="navbar-brand fw-bold" href="/">🏭 ERP Systém</a>
+
+    <button class="navbar-toggler" type="button" data-bs-toggle="collapse" data-bs-target="#navbarNav">
+      <span class="navbar-toggler-icon"></span>
+    </button>
+
+    <div class="collapse navbar-collapse" id="navbarNav">
+      <ul class="navbar-nav me-auto">
+        <li class="nav-item">
+          <a class="nav-link" href="/">🏠 Dashboard</a>
+        </li>
+        <li class="nav-item">
+          <a class="nav-link" href="{% url 'plan_vyroby' %}">🏭 Plán výroby</a>
+        </li>
+
+        <!-- Sklad -->
+        <li class="nav-item dropdown">
+          <a class="nav-link dropdown-toggle" href="#" role="button" data-bs-toggle="dropdown">
+            📦 Sklad
+          </a>
+          <ul class="dropdown-menu">
+            <li><a class="dropdown-item" href="{% url 'sklad_hotovych_dielov' %}">📦 Hotové diely</a></li>
+            <li><a class="dropdown-item" href="{% url 'sklad_materialu' %}">🏭 Materiál</a></li>
+            <li><hr class="dropdown-divider"></li>
+            <li><a class="dropdown-item" href="/admin/core/prijemkahotovychdielov/">📥 Príjemky</a></li>
+            <li><a class="dropdown-item" href="/admin/core/vydajkahotovychdielov/">📤 Výdajky</a></li>
+          </ul>
+        </li>
+
+        <li class="nav-item">
+          <a class="nav-link" href="{% url 'zoznam_produktov' %}">📋 Produkty</a>
+        </li>
+        <li class="nav-item">
+          <a class="nav-link" href="{% url 'zoznam_strojov' %}">⚙️ Stroje</a>
+        </li>
+
+        <!-- Administrácia -->
+        <li class="nav-item dropdown">
+          <a class="nav-link dropdown-toggle" href="#" role="button" data-bs-toggle="dropdown">
+            ⚙️ Administrácia
+          </a>
+          <ul class="dropdown-menu">
+            <li><a class="dropdown-item" href="/admin/">🔧 Admin panel</a></li>
+            <li><a class="dropdown-item" href="/operator/">👷 Operátorský panel</a></li>
+          </ul>
+        </li>
+      </ul>
+
+      <!-- Pravá strana - user -->
+      <ul class="navbar-nav">
+        {% if user.is_authenticated %}
+        <li class="nav-item dropdown">
+          <a class="nav-link dropdown-toggle" href="#" role="button" data-bs-toggle="dropdown">
+            👤 {{ user.username }}
+          </a>
+          <ul class="dropdown-menu dropdown-menu-end">
+            <li><a class="dropdown-item" href="/admin/password_change/">🔑 Zmeniť heslo</a></li>
+            <li><hr class="dropdown-divider"></li>
+            <li><a class="dropdown-item" href="/admin/logout/">🚪 Odhlásiť</a></li>
+          </ul>
+        </li>
+        {% else %}
+        <li class="nav-item">
+          <a class="nav-link" href="/admin/login/">🔐 Prihlásiť</a>
+        </li>
+        {% endif %}
+      </ul>
+    </div>
+  </div>
+</nav>

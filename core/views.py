@@ -206,13 +206,13 @@ def home(request):
 @login_required
 @permission_required("core.view_stroj", raise_exception=True)
 def zoznam_strojov(request):
-    """Zoznam všetkých strojov."""
     stroje = Stroj.objects.all().order_by("nazov")
-    context = {
-        "stroje": stroje,
-        "title": "Zoznam strojov",
-    }
-    return render(request, "core/zoznam_strojov.html", context)
+
+    for s in stroje:
+        s.vytazenost = s.vytazenost_poslednych_7_dni()
+
+    return render(request, "core/zoznam_strojov.html", {"stroje": stroje})
+
 
 
 
@@ -614,6 +614,7 @@ def novy_stroj(request):
 
     return render(request, "core/novy_stroj.html", context)
 
+
     
     # Namiesto form_universal.html použite:
     return render(request, 'core/novy_stroj.html', context)
@@ -648,6 +649,7 @@ def upravit_stroj(request, pk):
     }
 
     return render(request, "core/upravit_stroj.html", context)
+
 
 
 # ========================================
