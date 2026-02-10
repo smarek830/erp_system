@@ -170,45 +170,17 @@ class VyrobnaDavkaForm(forms.ModelForm):
 
 # FORMULÁRE PRE STROJE
 class StrojForm(forms.ModelForm):
-    """Formulár pre vytvorenie a úpravu stroja"""
-    
     class Meta:
         model = Stroj
-        fields = [
-            'nazov',
-            'typ',
-            'status',
-            'hodinova_sadzba',
-            'datum_posledneho_servisu',
-        ]
+        fields = ['nazov', 'typ', 'status', 'hodinova_sadzba', 'datum_posledneho_servisu', 'servis_interval_dni', 'manual_pdf']
         widgets = {
-            'nazov': forms.TextInput(attrs={
-                'class': 'form-control',
-                'placeholder': 'Názov stroja'
-            }),
-            'typ': forms.TextInput(attrs={
-                'class': 'form-control',
-                'placeholder': 'Typ/Model'
-            }),
-            'status': forms.Select(attrs={
-                'class': 'form-select'
-            }),
-            'hodinova_sadzba': forms.NumberInput(attrs={
-                'class': 'form-control',
-                'step': '0.01',
-                'min': '0'
-            }),
-            'datum_posledneho_servisu': forms.DateInput(attrs={
-                'class': 'form-control',
-                'type': 'date'
-            }),
-        }
-        labels = {
-            'nazov': 'Názov stroja *',
-            'typ': 'Typ/Model',
-            'status': 'Stav *',
-            'hodinova_sadzba': 'Hodinová sadzba (€) *',
-            'datum_posledneho_servisu': 'Dátum posledného servisu',
+            'nazov': forms.TextInput(attrs={'class': 'form-control', 'placeholder': 'Názov stroja'}),
+            'typ': forms.TextInput(attrs={'class': 'form-control', 'placeholder': 'Typ/Model'}),
+            'status': forms.Select(attrs={'class': 'form-select'}),
+            'hodinova_sadzba': forms.NumberInput(attrs={'class': 'form-control', 'step': '0.01'}),
+            'datum_posledneho_servisu': forms.DateInput(attrs={'class': 'form-control', 'type': 'date'}),
+            'servis_interval_dni': forms.NumberInput(attrs={'class': 'form-control', 'placeholder': '180'}),
+            'manual_pdf': forms.FileInput(attrs={'class': 'form-control'}),
         }
 
 

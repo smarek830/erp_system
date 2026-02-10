@@ -157,10 +157,32 @@ def export_plan_excel(request):
     return response
 
 @login_required
-@permission_required("core.view_objednavka", raise_exception=True)
 def detail_zakazky(request, pk):
-    objednavka = get_object_or_404(Objednavka, pk=pk)
-    return render(request, "core/detail_zakazky.html", {"objednavka": objednavka})
+    """Detail zakázky s výrobnou dávkou a operáciami"""
+    zakazka = get_object_or_404(Objednavka, pk=pk)
+    
+    # Objednávka má OneToOne na VyrobnaDavka cez related_name='vyrobna_davka'
+    vyrobna_davka = None
+    if hasattr(zakazka, 'vyrobna_davka') and zakazka.vyrobna_davka:
+        vyrobna_davka = zakazka.vyrobna_davka
+        
+        # Ak dávka existuje, ale nemá operácie, vytvor ich
+        if not vyrobna_davka.operacie.exists():
+            vyrobna_davka.vytvor_operacie()
+    
+    # História meraní (ak existuje)
+    merania = []
+    
+    context = {
+        'zakazka': zakazka,
+        'vyrobna_davka': vyrobna_davka,
+        'merania': merania,
+        'dnes': timezone.now().date(),
+    }
+    
+    return render(request, 'core/detail_zakazky.html', context)
+
+
 
 @login_required
 def home(request):
@@ -210,9 +232,14 @@ def zoznam_strojov(request):
 
     for s in stroje:
         s.vytazenost = s.vytazenost_poslednych_7_dni()
+        
+        # Pridaj absolútnu hodnotu dní do servisu
+        if s.dni_do_servisu is not None and s.dni_do_servisu < 0:
+            s.dni_po_termine = abs(s.dni_do_servisu)
+        else:
+            s.dni_po_termine = None
 
     return render(request, "core/zoznam_strojov.html", {"stroje": stroje})
-
 
 
 
@@ -598,7 +625,7 @@ def novy_stroj(request):
     from django.contrib import messages
 
     if request.method == "POST":
-        form = StrojForm(request.POST)
+        form = StrojForm(request.POST, request.FILES)  # DÔLEŽITÉ: request.FILES
         if form.is_valid():
             stroj = form.save()
             messages.success(request, f'✅ Stroj "{stroj.nazov}" bol vytvorený!')
@@ -615,14 +642,6 @@ def novy_stroj(request):
     return render(request, "core/novy_stroj.html", context)
 
 
-    
-    # Namiesto form_universal.html použite:
-    return render(request, 'core/novy_stroj.html', context)
-    return render(request, 'core/nova_vyrobna_davka.html', context)
-    return render(request, 'core/nova_prijemka.html', context)
-    return render(request, 'core/nova_vydajka.html', context)
-    return render(request, 'core/form_universal.html', context)
-
 @login_required
 @permission_required("core.change_stroj", raise_exception=True)
 def upravit_stroj(request, pk):
@@ -633,7 +652,7 @@ def upravit_stroj(request, pk):
     stroj = get_object_or_404(Stroj, pk=pk)
 
     if request.method == "POST":
-        form = StrojForm(request.POST, instance=stroj)
+        form = StrojForm(request.POST, request.FILES, instance=stroj)  # DÔLEŽITÉ: request.FILES
         if form.is_valid():
             stroj = form.save()
             messages.success(request, f'✅ Stroj "{stroj.nazov}" bol aktualizovaný!')
@@ -643,12 +662,13 @@ def upravit_stroj(request, pk):
 
     context = {
         "form": form,
-        "title": f'Upraviť stroj: {stroj.nazov}',
+        "title": f"Upraviť stroj: {stroj.nazov}",
         "submit_text": "Uložiť zmeny",
         "stroj": stroj,
     }
 
     return render(request, "core/upravit_stroj.html", context)
+
 
 
 

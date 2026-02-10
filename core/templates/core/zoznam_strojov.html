@@ -19,7 +19,7 @@
           <th>Stav</th>
           <th>Posledný servis</th>
           <th>Najbližší servis</th>
-          <th>Vyťaženosť</th>
+          <th>Vyťaženosť (7 dní)</th>
           <th>Hodinová sadzba</th>
           <th></th>
         </tr>
@@ -35,7 +35,7 @@
             {% endif %}
           </td>
 
-          <!-- Stav podľa tvojich STATUS_CHOICES -->
+          <!-- Stav -->
           <td>
             {% if stroj.status == "OK" %}
               <span class="badge bg-success">🟢 Funkčný</span>
@@ -57,30 +57,44 @@
             {% endif %}
           </td>
 
-          <!-- Najbližší servis – zatiaľ odhad, napr. + 180 dní -->
+                    <!-- Najbližší servis -->
           <td>
-            {% if stroj.datum_posledneho_servisu %}
-              {# jednoduchý odhad – reálne potom vyriešime v modeli/metóde #}
-              <span class="text-muted small">
-                cca {{ stroj.datum_posledneho_servisu|date:"d.m.Y" }} + interval
-              </span>
+            {% if stroj.datum_dalsieho_servisu %}
+              <div>
+                {{ stroj.datum_dalsieho_servisu|date:"d.m.Y" }}
+                {% if stroj.servis_status == 'overdue' %}
+                  <span class="badge bg-danger ms-1">🔴 Po termíne</span>
+                {% elif stroj.servis_status == 'warning' %}
+                  <span class="badge bg-warning text-dark ms-1">⚠️ Onedlho</span>
+                {% endif %}
+              </div>
+              <small class="text-muted">
+                {% if stroj.dni_po_termine %}
+                  {{ stroj.dni_po_termine }} dní po termíne
+                {% elif stroj.dni_do_servisu %}
+                  o {{ stroj.dni_do_servisu }} dní
+                {% endif %}
+              </small>
             {% else %}
               <span class="text-muted small">nezadané</span>
             {% endif %}
           </td>
-          <!-- Vyťaženosť – placeholder, neskôr dopočítame z dát -->
+
+
+          <!-- Vyťaženosť -->
           <td style="min-width: 160px;">
             <div class="progress" style="height: 16px;">
               <div class="progress-bar
                     {% if stroj.vytazenost < 60 %}bg-success
                     {% elif stroj.vytazenost < 90 %}bg-warning text-dark
                     {% else %}bg-danger{% endif %}"
-                  role="progressbar"
-                  style="width: {{ stroj.vytazenost }}%;">
+                   role="progressbar"
+                   style="width: {{ stroj.vytazenost }}%;">
                 <span class="small">{{ stroj.vytazenost }}%</span>
               </div>
             </div>
           </td>
+
           <!-- Cena za hodinu -->
           <td>
             {{ stroj.hodinova_sadzba }} €
@@ -89,8 +103,8 @@
           <!-- Akcie -->
           <td class="text-end">
             {% if stroj.manual_pdf %}
-              <a href="{{ stroj.manual_pdf.url }}" class="btn btn-outline-secondary btn-sm" target="_blank">
-                📄 Manuál
+              <a href="{{ stroj.manual_pdf.url }}" class="btn btn-outline-secondary btn-sm" target="_blank" title="Manuál">
+                📄
               </a>
             {% endif %}
             <a href="{% url 'upravit_stroj' stroj.pk %}" class="btn btn-outline-primary btn-sm">
