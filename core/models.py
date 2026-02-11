@@ -166,9 +166,113 @@ class Objednavka(models.Model):
     def je_dokoncena(self):
         return self.vyrobene_mnozstvo >= self.mnozstvo
     
+    def save(self, *args, **kwargs):
+        """
+        Pri zmene stavu na 'vyroba' automaticky vytvor výrobnú dávku a operácie
+        """
+        # Over, či ide o zmenu stavu na 'vyroba'
+        if self.pk:  # Existujúca objednávka
+            stara_objednavka = Objednavka.objects.get(pk=self.pk)
+            if stara_objednavka.stav != 'vyroba' and self.stav == 'vyroba':
+                # Stav sa zmenil na "Vo výrobe"
+                super().save(*args, **kwargs)  # Ulož najprv objednávku
+                self._vytvor_operacie_z_kusovnika()
+                return
+        
+        super().save(*args, **kwargs)
+    
+    def _vytvor_operacie_z_kusovnika(self):
+        """
+        Vytvorí operácie výroby podľa kusovníka produktu
+        """
+        from .models import OperaciaVyroby
+        
+        # Ak už existujú operácie, netvoriť znova
+        if self.operacie.exists():
+            return
+        
+        # Získaj šablóny operácií z kusovníka produktu
+        operacie_sablony = self.produkt.operacie.all().order_by('poradie')
+        
+        if not operacie_sablony.exists():
+            # Produkt nemá definovaný kusovník
+            return
+        
+        # Vytvor konkrétne operácie pre túto objednávku
+        for sablona in operacie_sablony:
+            OperaciaVyroby.objects.create(
+                objednavka=self,
+                vyrobna_davka=getattr(self, 'vyrobna_davka', None),
+                operacia_sablona=sablona,
+                stroj=sablona.stroj,
+                poradie=sablona.poradie,
+                nazov_operacie=sablona.nazov_operacie,
+                cas_pripravy=sablona.cas_pripravy,
+                cas_kus=sablona.cas_kus,
+                stav='caka'
+            )
+    
     def __str__(self):
         return f"#{self.cislo_objednavky} - {self.zakaznik} ({self.mnozstvo} ks)"
-    
+     
+    def moze_sa_uzavriet(self):
+        """Či možno zakázku uzavrieť (všetky operácie hotové)"""
+        operacie = self.operacie.all()
+        if not operacie.exists():
+            return False, "Zakázka nemá vytvorené operácie"
+        
+        nehotove = operacie.exclude(stav='hotova')
+        if nehotove.exists():
+            zoznam = ", ".join([f"{op.nazov_operacie}" for op in nehotove])
+            return False, f"Neukončené operácie: {zoznam}"
+        
+        if self.vyrobene_mnozstvo < self.mnozstvo:
+            return False, f"Nevyrobené množstvo: {self.zostava_vyroba()} ks"
+        
+        return True, "OK"
+
+    def uzavri_zakazku(self):
+        """
+        Uzatvorí zakázku a automaticky naskladní hotové diely
+        """
+        # Validácia
+        moze, popis = self.moze_sa_uzavriet()
+        if not moze:
+            raise ValueError(f"Nemožno uzavrieť zakázku: {popis}")
+        
+        # Zmeň stav na hotovo
+        self.stav = 'hotovo'
+        self.save()
+        
+        # Automaticky naskladni hotové diely
+        self._naskladni_hotove_diely()
+
+    def _naskladni_hotove_diely(self):
+        """
+        Automaticky vytvorí záznam v sklade hotových dielov
+        """
+        from django.utils import timezone
+        
+        # Nájdi alebo vytvor sklad pre tento produkt
+        sklad, created = SkladHotovychDielov.objects.get_or_create(
+            produkt=self.produkt,
+            defaults={
+                'mnozstvo': 0,
+                'minimalna_zasoba': 10,
+                'optimalna_zasoba': 100,
+            }
+        )
+        
+        # Vytvor príjemku
+        PrijemkaHotovychDielov.objects.create(
+            sklad=sklad,
+            objednavka=self,
+            mnozstvo=self.vyrobene_mnozstvo,
+            datum=timezone.now(),
+            operator=None,  # Automatická príjemka
+            poznamka=f"Automatické naskladnenie z objednávky #{self.cislo_objednavky}"
+        )
+
     class Meta:
         verbose_name = "Objednávka"
         verbose_name_plural = "Objednávky"
@@ -355,21 +459,19 @@ class OperaciaVyroby(models.Model):
         verbose_name="Objednávka"
     )
     
-    # Operácia z kusovníka (šablóna)
     operacia_sablona = models.ForeignKey(
         Operacia, 
         on_delete=models.PROTECT, 
         verbose_name="Operácia (šablóna)"
     )
     
-    # Konkrétne priradenie
     stroj = models.ForeignKey(Stroj, on_delete=models.PROTECT, verbose_name="Stroj")
     operator = models.ForeignKey(
         User, 
         on_delete=models.SET_NULL, 
         null=True, 
         blank=True, 
-        verbose_name="Priradený operátor"
+        verbose_name="Hlavný operátor"
     )
     
     poradie = models.IntegerField(verbose_name="Poradie")
@@ -385,10 +487,84 @@ class OperaciaVyroby(models.Model):
     datum_zaciatku = models.DateTimeField(null=True, blank=True, verbose_name="Začiatok práce")
     datum_ukoncenia = models.DateTimeField(null=True, blank=True, verbose_name="Koniec práce")
     
-    vyrobene_kusy = models.IntegerField(default=0, verbose_name="Vyrobené kusy")
-    nepodarky = models.IntegerField(default=0, verbose_name="Nepodarky")
+    # NOVÉ POLIA PRE TOK KUSOV
+    kusy_na_vstupe = models.IntegerField(default=0, verbose_name="Kusy na vstupe (z predch. operácie)")
+    vyrobene_kusy = models.IntegerField(default=0, verbose_name="Vyrobené kusy (OK)")
+    nepodarky = models.IntegerField(default=0, verbose_name="Nepodarky (NOK)")
+    kusy_na_vystupe = models.IntegerField(default=0, verbose_name="Kusy na výstupe (pre ďalšiu operáciu)")
     
     poznamka = models.TextField(blank=True, verbose_name="Poznámka")
+    
+    def get_predchadzajuca_operacia(self):
+        """Vráti predchádzajúcu operáciu v poradí"""
+        if self.poradie <= 1:
+            return None
+        return OperaciaVyroby.objects.filter(
+            objednavka=self.objednavka,
+            poradie=self.poradie - 1
+        ).first()
+    
+    def get_nasledujuca_operacia(self):
+        """Vráti nasledujúcu operáciu v poradí"""
+        return OperaciaVyroby.objects.filter(
+            objednavka=self.objednavka,
+            poradie=self.poradie + 1
+        ).first()
+    
+    def get_max_vyrobitelne_kusy(self):
+        """Koľko kusov maximálne môžem vyrobiť (podľa predch. operácie)"""
+        predch = self.get_predchadzajuca_operacia()
+        if predch is None:
+            # Prvá operácia - môžem vyrobiť celé množstvo objednávky
+            return self.objednavka.mnozstvo
+        else:
+            # Ďalšie operácie - max. toľko, koľko prišlo z predch.
+            return predch.kusy_na_vystupe
+    
+    def moze_zacat(self):
+        """Či môžem začať operáciu (predchádzajúca musí byť hotová)"""
+        predch = self.get_predchadzajuca_operacia()
+        if predch is None:
+            return True  # Prvá operácia môže začať vždy
+        return predch.stav == 'hotova' and predch.kusy_na_vystupe > 0
+    
+    def ukonci_operaciu(self, vyrobene, nepodarky):
+        """
+        Ukončí operáciu a prepošle kusy do ďalšej operácie
+        """
+        from django.utils import timezone
+        
+        # Validácia
+        max_kusy = self.get_max_vyrobitelne_kusy()
+        if vyrobene + nepodarky > max_kusy:
+            raise ValueError(
+                f"Nemôžete vyrobiť viac kusov ({vyrobene + nepodarky}) "
+                f"ako je dostupných na vstupe ({max_kusy})!"
+            )
+        
+        # Ulož výsledky
+        self.vyrobene_kusy = vyrobene
+        self.nepodarky = nepodarky
+        self.kusy_na_vystupe = vyrobene  # Iba OK kusy idú ďalej
+        self.stav = 'hotova'
+        self.datum_ukoncenia = timezone.now()
+        
+        # Vypočítaj reálny čas
+        if self.datum_zaciatku:
+            delta = self.datum_ukoncenia - self.datum_zaciatku
+            self.cas_realny = int(delta.total_seconds() / 60)
+        
+        self.save()
+        
+        # Prepošli kusy do ďalšej operácie
+        nasledujuca = self.get_nasledujuca_operacia()
+        if nasledujuca:
+            nasledujuca.kusy_na_vstupe = self.kusy_na_vystupe
+            nasledujuca.save()
+        else:
+            # Posledná operácia - aktualizuj vyrobené množstvo objednávky
+            self.objednavka.vyrobene_mnozstvo += self.vyrobene_kusy
+            self.objednavka.save()
     
     def __str__(self):
         return f"{self.poradie}. {self.nazov_operacie} - {self.objednavka.cislo_objednavky}"
@@ -397,6 +573,38 @@ class OperaciaVyroby(models.Model):
         verbose_name = "Operácia výroby"
         verbose_name_plural = "Operácie výroby"
         ordering = ['poradie']
+
+    # 5C. MODEL: OPERÁTOR NA OPERÁCII
+class OperatorNaOperacii(models.Model):
+    """Sledovanie, ktorí operátori pracovali na operácii"""
+    operacia = models.ForeignKey(
+        OperaciaVyroby, 
+        on_delete=models.CASCADE, 
+        related_name='operatori'
+    )
+    operator = models.ForeignKey(User, on_delete=models.CASCADE, verbose_name="Operátor")
+    
+    cas_zaciatku = models.DateTimeField(verbose_name="Začiatok práce")
+    cas_konca = models.DateTimeField(null=True, blank=True, verbose_name="Koniec práce")
+    
+    vyrobene_kusy = models.IntegerField(default=0, verbose_name="Vyrobené kusy týmto operátorom")
+    
+    def get_odpracovany_cas_min(self):
+        """Vráti odpracovaný čas v minútach"""
+        if self.cas_konca:
+            delta = self.cas_konca - self.cas_zaciatku
+            return int(delta.total_seconds() / 60)
+        return 0
+    
+    def __str__(self):
+        return f"{self.operator.username} na {self.operacia}"
+    
+    class Meta:
+        verbose_name = "Operátor na operácii"
+        verbose_name_plural = "Operátori na operáciách"
+
+       
+
 
 # 5C. MODEL: SKLAD HOTOVÝCH DIELOV
 class SkladHotovychDielov(models.Model):
