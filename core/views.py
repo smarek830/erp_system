@@ -6,7 +6,7 @@ from .models import (
     Produkt, Objednavka, Stroj, VyrobnyZaznam, KontrolaKvality, 
     HlasenieVyroby, Operacia, Kontrakt, Material, VyrobnaDavka,
     SkladHotovychDielov, PrijemkaHotovychDielov, VydajkaHotovychDielov,
-    PrijemkaNaSklad, VydajkaZoSkladu
+    PrijemkaNaSklad, VydajkaZoSkladu, OperaciaVyroby, OperatorNaOperacii,
 )
 from django.http import JsonResponse, HttpResponse
 from django.views.decorators.http import require_POST
@@ -256,15 +256,159 @@ def operator_dashboard(request):
 
 @login_required
 def operator_zakazka_detail(request, pk):
-    objednavka = get_object_or_404(Objednavka, pk=pk)
-    operacie = objednavka.produkt.operacie.all()
+    """Detail zakázky pre operátora s možnosťou riadenia operácií"""
+    from django.contrib import messages
+    from django.utils import timezone
+    from .models import OperaciaVyroby, OperatorNaOperacii
+    
+    zakazka = get_object_or_404(Objednavka, pk=pk)
+    operacie = zakazka.operacie.all().order_by('poradie')
+    
+    # Spracovanie akcií operátora
+    if request.method == "POST":
+        akcia = request.POST.get('akcia')
+        operacia_id = request.POST.get('operacia_id')
+        
+        if operacia_id:
+            operacia = get_object_or_404(OperaciaVyroby, pk=operacia_id, objednavka=zakazka)
+            
+            if akcia == 'zacat':
+                # Validácia - môžem začať?
+                if not operacia.moze_zacat():
+                    predch = operacia.get_predchadzajuca_operacia()
+                    if predch and predch.kusy_na_vystupe <= 0:
+                        messages.error(
+                            request, 
+                            f'⚠️ Nemôžete začať operáciu {operacia.nazov_operacie}! '
+                            f'Predchádzajúca operácia "{predch.nazov_operacie}" ešte nevyrobila žiadne kusy.'
+                        )
+                    else:
+                        messages.error(request, '⚠️ Nemôžete začať túto operáciu!')
+                else:
+                    operacia.stav = 'vyroba'
+                    operacia.datum_zaciatku = timezone.now()
+                    operacia.operator = request.user
+                    operacia.save()
+                    
+                    # Vytvor záznam operátora
+                    OperatorNaOperacii.objects.create(
+                        operacia=operacia,
+                        operator=request.user,
+                        cas_zaciatku=timezone.now()
+                    )
+                    
+                    dostupne = operacia.get_dostupne_kusy_na_vstupe()
+                    messages.success(
+                        request, 
+                        f'✅ Začali ste prácu na operácii: {operacia.nazov_operacie}<br>'
+                        f'Dostupné kusy: {dostupne} ks'
+                    )
+            
+            elif akcia == 'pauza':
+                operacia.stav = 'pozastavena'
+                operacia.save()
+                
+                # Ukončiť aktuálny záznam operátora
+                operator_zaznam = operacia.operatori.filter(
+                    operator=request.user,
+                    cas_konca__isnull=True
+                ).first()
+                if operator_zaznam:
+                    operator_zaznam.cas_konca = timezone.now()
+                    operator_zaznam.save()
+                
+                messages.warning(request, f'⏸️ Operácia pozastavená: {operacia.nazov_operacie}')
+            
+            elif akcia == 'pokracovat':
+                if not operacia.moze_pokracovat():
+                    messages.error(request, '⚠️ Nemôžete pokračovať - nie sú dostupné žiadne kusy!')
+                else:
+                    operacia.stav = 'vyroba'
+                    operacia.save()
+                    
+                    # Vytvor nový záznam operátora (pokračovanie)
+                    OperatorNaOperacii.objects.create(
+                        operacia=operacia,
+                        operator=request.user,
+                        cas_zaciatku=timezone.now()
+                    )
+                    
+                    dostupne = operacia.get_dostupne_kusy_na_vstupe()
+                    messages.success(
+                        request, 
+                        f'▶️ Pokračujete v práci na: {operacia.nazov_operacie}<br>'
+                        f'Zostávajúce kusy: {dostupne} ks'
+                    )
+            
+            elif akcia == 'ukonci_davku':
+                vyrobene = int(request.POST.get('vyrobene_kusy', 0))
+                nepodarky = int(request.POST.get('nepodarky', 0))
+                
+                try:
+                    operacia.ukonci_davku(vyrobene, nepodarky)
+                    
+                    # Ukončiť záznam operátora
+                    operator_zaznam = operacia.operatori.filter(
+                        operator=request.user,
+                        cas_konca__isnull=True
+                    ).first()
+                    if operator_zaznam:
+                        operator_zaznam.cas_konca = timezone.now()
+                        operator_zaznam.vyrobene_kusy += vyrobene
+                        operator_zaznam.save()
+                    
+                    zostava = operacia.get_dostupne_kusy_na_vstupe()
+                    if operacia.stav == 'hotova':
+                        messages.success(
+                            request, 
+                            f'✅ Operácia ÚPLNE UKONČENÁ!<br>'
+                            f'Celkovo vyrobené: {operacia.vyrobene_kusy} ks, Nepodarky: {operacia.nepodarky} ks'
+                        )
+                    else:
+                        messages.success(
+                            request, 
+                            f'✅ Dávka ukončená! Vyrobené: {vyrobene} ks, Nepodarky: {nepodarky} ks<br>'
+                            f'Zostáva ešte: {zostava} ks'
+                        )
+                    
+                except ValueError as e:
+                    messages.error(request, f'❌ Chyba: {str(e)}')
+        
+        # Uzavretie zakázky
+        elif akcia == 'uzavri_zakazku':
+            try:
+                zakazka.uzavri_zakazku()
+                messages.success(
+                    request, 
+                    f'✅ Zakázka #{zakazka.cislo_objednavky} bola uzavretá a hotové diely boli naskladnené!'
+                )
+                return redirect('operator_dashboard')
+            except ValueError as e:
+                messages.error(request, f'❌ {str(e)}')
+        
+        return redirect('operator_zakazka_detail', pk=pk)
+    
+    # Výpočet pre každú operáciu
     for op in operacie:
-        op.posledny_zaznam = VyrobnyZaznam.objects.filter(
-            objednavka=objednavka, operacia=op
-        ).order_by('-cas_zaznamu').first()
-    return render(request, 'core/operator/zakazka_detail.html', {
-        'objednavka': objednavka, 'operacie': operacie,
-    })
+        op.dostupne_kusy = op.get_dostupne_kusy_na_vstupe()
+        op.max_kusy = op.get_max_vyrobitelne_kusy()
+        op.operatori_list = op.operatori.all()
+        op.moze_zacat_teraz = op.moze_zacat()
+        op.moze_pokracovat_teraz = op.moze_pokracovat()
+    
+    # Skontroluj, či sa môže zakázka uzavrieť
+    moze_uzavriet, dovod = zakazka.moze_sa_uzavriet()
+    
+    context = {
+        'zakazka': zakazka,
+        'operacie': operacie,
+        'moze_uzavriet': moze_uzavriet,
+        'dovod_neuzvretia': dovod if not moze_uzavriet else None,
+        'dnes': timezone.now().date(),
+    }
+    
+    return render(request, 'core/operator_zakazka_detail.html', context)
+
 # ========================================
 # AJAX AKCIE - TRACKING PER OPERÁCIA
 # ========================================

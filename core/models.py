@@ -511,26 +511,67 @@ class OperaciaVyroby(models.Model):
             poradie=self.poradie + 1
         ).first()
     
-    def get_max_vyrobitelne_kusy(self):
-        """Koľko kusov maximálne môžem vyrobiť (podľa predch. operácie)"""
+    def get_dostupne_kusy_na_vstupe(self):
+        """
+        Koľko kusov je dostupných pre túto operáciu (z predchádzajúcej)
+        """
         predch = self.get_predchadzajuca_operacia()
         if predch is None:
-            # Prvá operácia - môžem vyrobiť celé množstvo objednávky
+            # Prvá operácia - dostupné je celé množstvo objednávky
             return self.objednavka.mnozstvo
         else:
-            # Ďalšie operácie - max. toľko, koľko prišlo z predch.
-            return predch.kusy_na_vystupe
+            # Ďalšie operácie - dostupné sú iba kusy vyrobené predchádzajúcou operáciou
+            # MÍNUS kusy, ktoré táto operácia už spracovala
+            return predch.kusy_na_vystupe - self.kusy_spracovane_celkom()
+    
+    def kusy_spracovane_celkom(self):
+        """Koľko kusov táto operácia už celkovo spracovala (OK + NOK)"""
+        return self.vyrobene_kusy + self.nepodarky
+    
+    def get_max_vyrobitelne_kusy(self):
+        """
+        Koľko kusov maximálne môžem ešte vyrobiť v tejto operácii
+        """
+        return self.get_dostupne_kusy_na_vstupe()
     
     def moze_zacat(self):
-        """Či môžem začať operáciu (predchádzajúca musí byť hotová)"""
+        """
+        Či môžem začať operáciu:
+        1. Predchádzajúca operácia musí mať vyrobené aspoň nejaké kusy
+        2. Musia byť dostupné kusy na vstupe
+        """
+        if self.stav in ['vyroba', 'hotova']:
+            # Už je v práci alebo hotová
+            return False
+        
         predch = self.get_predchadzajuca_operacia()
         if predch is None:
-            return True  # Prvá operácia môže začať vždy
-        return predch.stav == 'hotova' and predch.kusy_na_vystupe > 0
+            # Prvá operácia môže začať vždy
+            return True
+        
+        # Ďalšie operácie - predchádzajúca musí mať vyrobené kusy
+        if predch.kusy_na_vystupe <= 0:
+            return False
+        
+        # A musia byť dostupné kusy na spracovanie
+        dostupne = self.get_dostupne_kusy_na_vstupe()
+        return dostupne > 0
     
-    def ukonci_operaciu(self, vyrobene, nepodarky):
+    def moze_pokracovat(self):
         """
-        Ukončí operáciu a prepošle kusy do ďalšej operácie
+        Či môžem pokračovať v rozpracovanej operácii
+        """
+        if self.stav != 'pozastavena':
+            return False
+        
+        # Môžem pokračovať, ak sú ešte dostupné kusy
+        dostupne = self.get_dostupne_kusy_na_vstupe()
+        return dostupne > 0
+    
+    def ukonci_davku(self, vyrobene, nepodarky):
+        """
+        Ukončí aktuálnu dávku (nie celú operáciu!)
+        Operácia môže pokračovať, ak sú ešte dostupné kusy
         """
         from django.utils import timezone
         
@@ -542,29 +583,38 @@ class OperaciaVyroby(models.Model):
                 f"ako je dostupných na vstupe ({max_kusy})!"
             )
         
-        # Ulož výsledky
-        self.vyrobene_kusy = vyrobene
-        self.nepodarky = nepodarky
-        self.kusy_na_vystupe = vyrobene  # Iba OK kusy idú ďalej
-        self.stav = 'hotova'
-        self.datum_ukoncenia = timezone.now()
+        # Pripočítaj k celkovému výsledku
+        self.vyrobene_kusy += vyrobene
+        self.nepodarky += nepodarky
+        self.kusy_na_vystupe += vyrobene  # Iba OK kusy idú ďalej
         
-        # Vypočítaj reálny čas
-        if self.datum_zaciatku:
-            delta = self.datum_ukoncenia - self.datum_zaciatku
-            self.cas_realny = int(delta.total_seconds() / 60)
-        
-        self.save()
-        
-        # Prepošli kusy do ďalšej operácie
+        # Aktualizuj kusy na vstupe nasledujúcej operácie
         nasledujuca = self.get_nasledujuca_operacia()
         if nasledujuca:
             nasledujuca.kusy_na_vstupe = self.kusy_na_vystupe
             nasledujuca.save()
+        
+        # Over, či je operácia úplne hotová
+        zostava = self.get_dostupne_kusy_na_vstupe()
+        if zostava <= 0:
+            # Už niet kusov na spracovanie - operácia je hotová
+            self.stav = 'hotova'
+            self.datum_ukoncenia = timezone.now()
+            
+            # Vypočítaj reálny čas
+            if self.datum_zaciatku:
+                delta = self.datum_ukoncenia - self.datum_zaciatku
+                self.cas_realny = int(delta.total_seconds() / 60)
+            
+            # Ak je to posledná operácia, aktualizuj objednávku
+            if nasledujuca is None:
+                self.objednavka.vyrobene_mnozstvo = self.vyrobene_kusy
+                self.objednavka.save()
         else:
-            # Posledná operácia - aktualizuj vyrobené množstvo objednávky
-            self.objednavka.vyrobene_mnozstvo += self.vyrobene_kusy
-            self.objednavka.save()
+            # Ešte zostávajú kusy - operácia pokračuje
+            self.stav = 'pozastavena'
+        
+        self.save()
     
     def __str__(self):
         return f"{self.poradie}. {self.nazov_operacie} - {self.objednavka.cislo_objednavky}"

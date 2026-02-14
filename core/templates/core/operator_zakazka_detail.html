@@ -1,0 +1,222 @@
+{% extends "core/base.html" %}
+{% load static %}
+
+{% block page_title %}Zakázka #{{ zakazka.cislo_objednavky }}{% endblock %}
+
+{% block content %}
+<div class="container py-4">
+  
+  <!-- Tlačidlo späť -->
+  <a href="{% url 'operator_dashboard' %}" class="btn btn-outline-secondary btn-sm mb-3">
+    ← Späť na dashboard
+  </a>
+
+  <!-- Hlavička zakázky -->
+  <div class="card mb-4">
+    <div class="card-header bg-primary text-white">
+      <h4 class="mb-0">⚙️ Zakázka #{{ zakazka.cislo_objednavky }}</h4>
+      <small>{{ zakazka.zakaznik }} - {{ zakazka.produkt.nazov }}</small>
+    </div>
+    <div class="card-body">
+      <div class="row text-center">
+        <div class="col-md-3">
+          <h5 class="text-muted mb-1">Množstvo</h5>
+          <h3>{{ zakazka.mnozstvo }} ks</h3>
+        </div>
+        <div class="col-md-3">
+          <h5 class="text-muted mb-1">Vyrobené</h5>
+          <h3 class="text-success">{{ zakazka.vyrobene_mnozstvo }} ks</h3>
+        </div>
+        <div class="col-md-3">
+          <h5 class="text-muted mb-1">Zostáva</h5>
+          <h3 class="text-warning">{{ zakazka.zostava_vyroba }} ks</h3>
+        </div>
+        <div class="col-md-3">
+          <h5 class="text-muted mb-1">Termín</h5>
+          <h3 class="{% if zakazka.datum_pozadovane < dnes %}text-danger{% endif %}">
+            {{ zakazka.datum_pozadovane|date:"d.m.Y" }}
+          </h3>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <!-- Operácie -->
+  <div class="card mb-4">
+    <div class="card-header bg-secondary text-white">
+      <h5 class="mb-0">📋 Operácie (postupne zhora dole)</h5>
+    </div>
+    <div class="card-body p-0">
+      <div class="table-responsive">
+        <table class="table table-hover mb-0 align-middle">
+          <thead class="table-light">
+            <tr>
+              <th>Por.</th>
+              <th>Operácia</th>
+              <th>Stroj</th>
+              <th>Dostupné kusy</th>
+              <th>Vyrobené (OK)</th>
+              <th>NOK</th>
+              <th>Stav</th>
+              <th>Akcia</th>
+            </tr>
+          </thead>
+          <tbody>
+            {% for op in operacie %}
+            <tr>
+              <td><strong>{{ op.poradie }}.</strong></td>
+              <td>
+                <div>{{ op.nazov_operacie }}</div>
+                {% if op.operatori_list %}
+                  <small class="text-muted">
+                    Operátori: 
+                    {% for opr in op.operatori_list %}
+                      {{ opr.operator.username }}{% if not forloop.last %}, {% endif %}
+                    {% endfor %}
+                  </small>
+                {% endif %}
+              </td>
+              <td>{{ op.stroj.nazov }}</td>
+              <td>
+                <span class="badge {% if op.dostupne_kusy > 0 %}bg-info{% else %}bg-secondary{% endif %}">
+                  {{ op.dostupne_kusy }} ks
+                </span>
+              </td>
+              <td><span class="badge bg-success">{{ op.vyrobene_kusy }} ks</span></td>
+              <td><span class="badge bg-danger">{{ op.nepodarky }} ks</span></td>
+              <td>
+                {% if op.stav == 'caka' %}
+                  <span class="badge bg-secondary">⏳ Čaká</span>
+                {% elif op.stav == 'vyroba' %}
+                  <span class="badge bg-warning text-dark">⚙️ V práci</span>
+                {% elif op.stav == 'hotova' %}
+                  <span class="badge bg-success">✅ Hotová</span>
+                {% elif op.stav == 'pozastavena' %}
+                  <span class="badge bg-secondary">⏸️ Pauza</span>
+                {% endif %}
+              </td>
+              <td>
+                <form method="post" class="d-inline">
+                  {% csrf_token %}
+                  <input type="hidden" name="operacia_id" value="{{ op.id }}">
+                  
+                  {% if op.stav == 'caka' %}
+                    <button type="submit" name="akcia" value="zacat" 
+                            class="btn btn-success btn-sm"
+                            {% if not op.moze_zacat_teraz %}
+                              disabled 
+                              title="Predchádzajúca operácia musí najprv vyrobiť kusy"
+                            {% endif %}>
+                      ▶ Začať
+                    </button>
+                  
+                  {% elif op.stav == 'vyroba' %}
+                    <button type="submit" name="akcia" value="pauza" class="btn btn-warning btn-sm">
+                      ⏸ Pauza
+                    </button>
+                    <button type="button" class="btn btn-primary btn-sm" 
+                            data-bs-toggle="modal" data-bs-target="#ukonciModal{{ op.id }}">
+                      🔴 Ukončiť dávku
+                    </button>
+                  
+                  {% elif op.stav == 'pozastavena' %}
+                    <button type="submit" name="akcia" value="pokracovat" 
+                            class="btn btn-info btn-sm"
+                            {% if not op.moze_pokracovat_teraz %}
+                              disabled
+                              title="Nie sú dostupné žiadne kusy"
+                            {% endif %}>
+                      ▶ Pokračovať
+                    </button>
+                  
+                  {% elif op.stav == 'hotova' %}
+                    <span class="text-success">✅ Hotovo</span>
+                  {% endif %}
+                </form>
+
+                <!-- Modal pre ukončenie dávky -->
+                <div class="modal fade" id="ukonciModal{{ op.id }}" tabindex="-1">
+                  <div class="modal-dialog">
+                    <div class="modal-content">
+                      <form method="post">
+                        {% csrf_token %}
+                        <input type="hidden" name="operacia_id" value="{{ op.id }}">
+                        <input type="hidden" name="akcia" value="ukonci_davku">
+                        
+                        <div class="modal-header">
+                          <h5 class="modal-title">Ukončiť dávku: {{ op.nazov_operacie }}</h5>
+                          <button type="button" class="btn-close" data-bs-dismiss="modal"></button>
+                        </div>
+                        <div class="modal-body">
+                          <div class="alert alert-info">
+                            <strong>📦 Dostupné kusy: {{ op.dostupne_kusy }} ks</strong><br>
+                            <small>Už vyrobené: {{ op.vyrobene_kusy }} ks (OK) + {{ op.nepodarky }} ks (NOK)</small>
+                          </div>
+                          
+                          <div class="mb-3">
+                            <label class="form-label">Vyrobené kusy v tejto dávke (OK) *</label>
+                            <input type="number" name="vyrobene_kusy" class="form-control" 
+                                   min="0" max="{{ op.dostupne_kusy }}" required>
+                            <small class="text-muted">Max. {{ op.dostupne_kusy }} ks</small>
+                          </div>
+                          
+                          <div class="mb-3">
+                            <label class="form-label">Nepodarky v tejto dávke (NOK)</label>
+                            <input type="number" name="nepodarky" class="form-control" 
+                                   min="0" value="0">
+                          </div>
+
+                          <div class="alert alert-warning">
+                            <small>
+                              ⚠️ Po ukončení dávky:
+                              <ul class="mb-0">
+                                <li>OK kusy sa preposúvajú do ďalšej operácie</li>
+                                <li>Ak zostanú kusy, môžete pokračovať neskôr</li>
+                                <li>Ak už niet kusov, operácia sa označí ako HOTOVÁ</li>
+                              </ul>
+                            </small>
+                          </div>
+                        </div>
+                        <div class="modal-footer">
+                          <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">Zrušiť</button>
+                          <button type="submit" class="btn btn-primary">Ukončiť dávku</button>
+                        </div>
+                      </form>
+                    </div>
+                  </div>
+                </div>
+
+              </td>
+            </tr>
+            {% endfor %}
+          </tbody>
+        </table>
+      </div>
+    </div>
+  </div>
+
+  <!-- Tlačidlo uzavrieť zakázku -->
+  {% if moze_uzavriet %}
+    <div class="card border-success">
+      <div class="card-body">
+        <h5 class="card-title text-success">✅ Zakázka je pripravená na uzavretie</h5>
+        <p class="card-text">Všetky operácie sú hotové a potrebné množstvo bolo vyrobené.</p>
+        <form method="post">
+          {% csrf_token %}
+          <button type="submit" name="akcia" value="uzavri_zakazku" 
+                  class="btn btn-success btn-lg"
+                  onclick="return confirm('Naozaj chcete uzavrieť zakázku a naskladniť hotové diely?')">
+            ✅ Uzavrieť zakázku a naskladniť
+          </button>
+        </form>
+      </div>
+    </div>
+  {% else %}
+    <div class="alert alert-warning">
+      <strong>⚠️ Zakázku nie je možné uzavrieť</strong><br>
+      {{ dovod_neuzvretia }}
+    </div>
+  {% endif %}
+
+</div>
+{% endblock %}
