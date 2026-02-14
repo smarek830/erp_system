@@ -1,8 +1,8 @@
 from django.db import models
 from django.utils import timezone
 from django.contrib.auth.models import User
-from django.utils import timezone
 from datetime import timedelta
+
 
 # 1. MODEL: STROJE
 class Stroj(models.Model):
@@ -18,7 +18,6 @@ class Stroj(models.Model):
     hodinova_sadzba = models.DecimalField(max_digits=6, decimal_places=2, default=0.00, verbose_name="Cena za hodinu (€)")
     datum_posledneho_servisu = models.DateField(null=True, blank=True, verbose_name="Posledný servis")
     
-    # NOVÉ POLE
     servis_interval_dni = models.PositiveIntegerField(
         default=180, 
         verbose_name="Interval servisu (dni)",
@@ -50,9 +49,9 @@ class Stroj(models.Model):
         if dni is None:
             return 'unknown'
         elif dni < 0:
-            return 'overdue'  # po termíne
+            return 'overdue'
         elif dni <= 7:
-            return 'warning'  # do 7 dní
+            return 'warning'
         else:
             return 'ok'
     
@@ -168,14 +167,12 @@ class Objednavka(models.Model):
     
     def save(self, *args, **kwargs):
         """
-        Pri zmene stavu na 'vyroba' automaticky vytvor výrobnú dávku a operácie
+        Pri zmene stavu na 'vyroba' automaticky vytvor operácie
         """
-        # Over, či ide o zmenu stavu na 'vyroba'
-        if self.pk:  # Existujúca objednávka
+        if self.pk:
             stara_objednavka = Objednavka.objects.get(pk=self.pk)
             if stara_objednavka.stav != 'vyroba' and self.stav == 'vyroba':
-                # Stav sa zmenil na "Vo výrobe"
-                super().save(*args, **kwargs)  # Ulož najprv objednávku
+                super().save(*args, **kwargs)
                 self._vytvor_operacie_z_kusovnika()
                 return
         
@@ -185,8 +182,6 @@ class Objednavka(models.Model):
         """
         Vytvorí operácie výroby podľa kusovníka produktu
         """
-        from .models import OperaciaVyroby
-        
         # Ak už existujú operácie, netvoriť znova
         if self.operacie.exists():
             return
@@ -195,7 +190,6 @@ class Objednavka(models.Model):
         operacie_sablony = self.produkt.operacie.all().order_by('poradie')
         
         if not operacie_sablony.exists():
-            # Produkt nemá definovaný kusovník
             return
         
         # Vytvor konkrétne operácie pre túto objednávku
@@ -235,25 +229,18 @@ class Objednavka(models.Model):
         """
         Uzatvorí zakázku a automaticky naskladní hotové diely
         """
-        # Validácia
         moze, popis = self.moze_sa_uzavriet()
         if not moze:
             raise ValueError(f"Nemožno uzavrieť zakázku: {popis}")
         
-        # Zmeň stav na hotovo
         self.stav = 'hotovo'
         self.save()
-        
-        # Automaticky naskladni hotové diely
         self._naskladni_hotove_diely()
 
     def _naskladni_hotove_diely(self):
         """
         Automaticky vytvorí záznam v sklade hotových dielov
         """
-        from django.utils import timezone
-        
-        # Nájdi alebo vytvor sklad pre tento produkt
         sklad, created = SkladHotovychDielov.objects.get_or_create(
             produkt=self.produkt,
             defaults={
@@ -263,13 +250,12 @@ class Objednavka(models.Model):
             }
         )
         
-        # Vytvor príjemku
         PrijemkaHotovychDielov.objects.create(
             sklad=sklad,
             objednavka=self,
             mnozstvo=self.vyrobene_mnozstvo,
             datum=timezone.now(),
-            operator=None,  # Automatická príjemka
+            operator=None,
             poznamka=f"Automatické naskladnenie z objednávky #{self.cislo_objednavky}"
         )
 
@@ -314,6 +300,7 @@ class Kontrakt(models.Model):
     class Meta:
         verbose_name = "Kontrakt"
         verbose_name_plural = "Kontrakty"
+                                                                       
 
 # 5A. MODEL: VÝROBNÁ DÁVKA Z KONTRAKTU
 class VyrobnaDavka(models.Model):
@@ -356,36 +343,6 @@ class VyrobnaDavka(models.Model):
             self.cislo_davky = f"{self.kontrakt.cislo_kontraktu}-D{pocet + 1:03d}"
         super().save(*args, **kwargs)
     
-    def vytvor_objednavku(self):
-        """Vytvorí objednávku z výrobnej dávky"""
-        if self.objednavka:
-            return self.objednavka
-        
-        objednavka = Objednavka.objects.create(
-            cislo_objednavky=self.cislo_davky,
-            zakaznik=self.kontrakt.zakaznik,
-            produkt=self.kontrakt.produkt,
-            mnozstvo=self.mnozstvo_davky,
-            datum_zadania=self.datum_vytvorenia,
-            datum_pozadovane=self.pozadovany_termin,
-            stav='nova',
-            poznamka=f"Výrobná dávka z kontraktu {self.kontrakt.cislo_kontraktu}"
-        )
-        
-        self.objednavka = objednavka
-        self.stav = 'vo_vyrobe'
-        self.save()
-        
-        return objednavka
-    
-    def __str__(self):
-        return f"{self.cislo_davky} - {self.mnozstvo_davky} ks ({self.get_stav_display()})"
-    
-    class Meta:
-        verbose_name = "Výrobná dávka"
-        verbose_name_plural = "Výrobné dávky"
-        ordering = ['-datum_vytvorenia']
-
     def vytvor_operacie(self):
         """Automaticky vytvorí operácie podľa kusovníka produktu"""
         if self.operacie.exists():
@@ -432,7 +389,16 @@ class VyrobnaDavka(models.Model):
         # AUTOMATICKY VYTVOR OPERÁCIE
         self.vytvor_operacie()
         
-        return objednavka    
+        return objednavka
+    
+    def __str__(self):
+        return f"{self.cislo_davky} - {self.mnozstvo_davky} ks ({self.get_stav_display()})"
+    
+    class Meta:
+        verbose_name = "Výrobná dávka"
+        verbose_name_plural = "Výrobné dávky"
+        ordering = ['-datum_vytvorenia']
+
 
 # 5B. MODEL: OPERÁCIA VÝROBY (konkrétna operácia priradená k dávke)
 class OperaciaVyroby(models.Model):
@@ -541,19 +507,15 @@ class OperaciaVyroby(models.Model):
         2. Musia byť dostupné kusy na vstupe
         """
         if self.stav in ['vyroba', 'hotova']:
-            # Už je v práci alebo hotová
             return False
         
         predch = self.get_predchadzajuca_operacia()
         if predch is None:
-            # Prvá operácia môže začať vždy
             return True
         
-        # Ďalšie operácie - predchádzajúca musí mať vyrobené kusy
         if predch.kusy_na_vystupe <= 0:
             return False
         
-        # A musia byť dostupné kusy na spracovanie
         dostupne = self.get_dostupne_kusy_na_vstupe()
         return dostupne > 0
     
@@ -564,7 +526,6 @@ class OperaciaVyroby(models.Model):
         if self.stav != 'pozastavena':
             return False
         
-        # Môžem pokračovať, ak sú ešte dostupné kusy
         dostupne = self.get_dostupne_kusy_na_vstupe()
         return dostupne > 0
     
@@ -573,8 +534,6 @@ class OperaciaVyroby(models.Model):
         Ukončí aktuálnu dávku (nie celú operáciu!)
         Operácia môže pokračovať, ak sú ešte dostupné kusy
         """
-        from django.utils import timezone
-        
         # Validácia
         max_kusy = self.get_max_vyrobitelne_kusy()
         if vyrobene + nepodarky > max_kusy:
@@ -624,7 +583,8 @@ class OperaciaVyroby(models.Model):
         verbose_name_plural = "Operácie výroby"
         ordering = ['poradie']
 
-    # 5C. MODEL: OPERÁTOR NA OPERÁCII
+
+# 5C. MODEL: OPERÁTOR NA OPERÁCII
 class OperatorNaOperacii(models.Model):
     """Sledovanie, ktorí operátori pracovali na operácii"""
     operacia = models.ForeignKey(
@@ -652,11 +612,9 @@ class OperatorNaOperacii(models.Model):
     class Meta:
         verbose_name = "Operátor na operácii"
         verbose_name_plural = "Operátori na operáciách"
+                       
 
-       
-
-
-# 5C. MODEL: SKLAD HOTOVÝCH DIELOV
+# 5D. MODEL: SKLAD HOTOVÝCH DIELOV
 class SkladHotovychDielov(models.Model):
     """Evidencia hotových dielov na sklade"""
     produkt = models.ForeignKey(Produkt, on_delete=models.PROTECT, verbose_name="Produkt")
@@ -695,7 +653,7 @@ class SkladHotovychDielov(models.Model):
         ordering = ['produkt__nazov']
 
 
-# 5D. MODEL: PRÍJEMKA HOTOVÝCH DIELOV
+# 5E. MODEL: PRÍJEMKA HOTOVÝCH DIELOV
 class PrijemkaHotovychDielov(models.Model):
     """Naskladnenie hotových dielov z výroby"""
     sklad = models.ForeignKey('SkladHotovychDielov', on_delete=models.PROTECT, related_name='prijemky')
@@ -724,7 +682,7 @@ class PrijemkaHotovychDielov(models.Model):
         ordering = ['-datum']
 
 
-# 5E. MODEL: VÝDAJKA HOTOVÝCH DIELOV
+# 5F. MODEL: VÝDAJKA HOTOVÝCH DIELOV
 class VydajkaHotovychDielov(models.Model):
     """Vydanie hotových dielov zákazníkovi"""
     sklad = models.ForeignKey('SkladHotovychDielov', on_delete=models.PROTECT, related_name='vydajky')
@@ -772,6 +730,7 @@ class VydajkaHotovychDielov(models.Model):
         verbose_name = "Výdajka hotových dielov"
         verbose_name_plural = "Výdajky hotových dielov"
         ordering = ['-datum']
+
 
 # 6. MODEL: VÝROBNÉ ZÁZNAMY
 class VyrobnyZaznam(models.Model):
@@ -832,6 +791,8 @@ class HlasenieVyroby(models.Model):
     
     def __str__(self):
         return f"{self.get_typ_problemu_display()} - {self.objednavka}"
+
+
 # 9. SKLAD - MATERIÁL
 class Material(models.Model):
     TYPY_MATERIALU = [
@@ -885,7 +846,7 @@ class PrijemkaNaSklad(models.Model):
 # 11. VÝDAJKA ZO SKLADU
 class VydajkaZoSkladu(models.Model):
     material = models.ForeignKey(Material, on_delete=models.PROTECT)
-    objednavka = models.ForeignKey(Objednavka, on_delete=models.CASCADE, related_name='vydajky')
+    objednavka = models.ForeignKey(Objednavka, on_delete=models.CASCADE, related_name='vydajky_material')
     operacia = models.ForeignKey(Operacia, on_delete=models.SET_NULL, null=True, blank=True)
     mnozstvo = models.DecimalField(max_digits=10, decimal_places=2, verbose_name="Množstvo")
     datum = models.DateTimeField(default=timezone.now)
@@ -944,7 +905,8 @@ class MeraniePriKontrole(models.Model):
     class Meta:
         verbose_name = "Meranie pri kontrole"
         verbose_name_plural = "Merania pri kontrole"
-        
+
+
 # 14. MODEL: SPRIEVODKA
 class Sprievodka(models.Model):
     objednavka = models.OneToOneField(Objednavka, on_delete=models.CASCADE, related_name='sprievodka')
