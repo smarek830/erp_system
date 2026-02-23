@@ -24,9 +24,17 @@ BASE_DIR = Path(__file__).resolve().parent.parent
 SECRET_KEY = 'django-insecure-w^xswd6i#%kjz46y5chs6nnbpcth52j=))&x-#4x=-t3om)&gp'
 
 # SECURITY WARNING: don't run with debug turned on in production!
-DEBUG = False
+DEBUG = True
 
-ALLOWED_HOSTS = ['192.168.1.94', '100.88.66.23', 'localhost', '127.0.0.1']
+ALLOWED_HOSTS = [
+    'localhost', 
+    '127.0.0.1',
+    '192.168.1.94',      # NAS IP
+    '192.168.1.200',     # PC lokálna IP
+    '100.97.233.7',      # Tailscale PC IP
+    '100.88.66.23',      # Tailscale NAS IP
+    '*',                 # Povoliť všetko (development)
+]
 
 
 # Application definition
