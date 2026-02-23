@@ -12,6 +12,8 @@ services:
       - erp_media:/app/media
       - erp_db:/app
     restart: unless-stopped
+    stdin_open: true
+    tty: true
     environment:
       - PYTHONUNBUFFERED=1
       - DEBUG=True
