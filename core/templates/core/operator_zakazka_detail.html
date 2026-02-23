@@ -4,10 +4,10 @@
 {% block page_title %}Zakázka #{{ zakazka.cislo_objednavky }}{% endblock %}
 
 {% block content %}
-<div class="container py-4">
+<div class="container px-0 px-md-2 py-2 py-md-4">
   
   <!-- Tlačidlo späť -->
-  <a href="{% url 'operator_dashboard' %}" class="btn btn-outline-secondary btn-sm mb-3">
+  <a href="{% url 'operator_dashboard' %}" class="btn btn-outline-secondary btn-sm mb-3 w-100">
     ← Späť na dashboard
   </a>
 
@@ -18,28 +18,28 @@
       <small>{{ zakazka.zakaznik }} - {{ zakazka.produkt.nazov }}</small>
     </div>
     <div class="card-body">
-      <div class="row text-center">
-        <div class="col-md-2">
+      <div class="row text-center g-3">
+        <div class="col-6 col-md-2">
           <h5 class="text-muted mb-1">Požadované</h5>
           <h3>{{ zakazka.mnozstvo }} ks</h3>
         </div>
-        <div class="col-md-2">
+        <div class="col-6 col-md-2">
           <h5 class="text-muted mb-1">OK kusy</h5>
           <h3 class="text-success">{{ zakazka.celkom_ok_kusy }} ks</h3>
         </div>
-        <div class="col-md-2">
+        <div class="col-6 col-md-2">
           <h5 class="text-muted mb-1">NOK kusy</h5>
           <h3 class="text-danger">{{ zakazka.celkom_nok_kusy }} ks</h3>
         </div>
-        <div class="col-md-2">
+        <div class="col-6 col-md-2">
           <h5 class="text-muted mb-1">Zostáva OK</h5>
           <h3 class="text-warning">{{ zakazka.zostava_vyroba }} ks</h3>
         </div>
-        <div class="col-md-2">
+        <div class="col-6 col-md-2">
           <h5 class="text-muted mb-1">Celkom vyrobiť</h5>
           <h3 class="text-info">{{ zakazka.potrebne_kusy_celkom }} ks</h3>
         </div>
-        <div class="col-md-2">
+        <div class="col-6 col-md-2">
           <h5 class="text-muted mb-1">Termín</h5>
           <h3 class="{% if zakazka.datum_pozadovane < dnes %}text-danger{% endif %}">
             {{ zakazka.datum_pozadovane|date:"d.m.Y" }}
@@ -54,7 +54,9 @@
     <div class="card-header bg-secondary text-white">
       <h5 class="mb-0">📋 Operácie (postupne zhora dole)</h5>
     </div>
-    <div class="card-body p-0">
+
+    <!-- Desktop tabuľka -->
+    <div class="card-body p-0 d-none d-md-block">
       <div class="table-responsive">
         <table class="table table-hover mb-0 align-middle">
           <thead class="table-light">
@@ -123,7 +125,7 @@
                       ⏸ Pauza
                     </button>
                     <button type="button" class="btn btn-primary btn-sm" 
-                            data-bs-toggle="modal" data-bs-target="#ukonciModal{{ op.id }}">
+                            data-bs-toggle="modal" data-bs-target="#ukonciModalDesktop{{ op.id }}">
                       🔴 Ukončiť dávku
                     </button>
                   
@@ -151,7 +153,7 @@
                 </form>
 
                 <!-- Modal pre ukončenie dávky -->
-                <div class="modal fade" id="ukonciModal{{ op.id }}" tabindex="-1">
+                <div class="modal fade" id="ukonciModalDesktop{{ op.id }}" tabindex="-1">
                   <div class="modal-dialog">
                     <div class="modal-content">
                       <form method="post">
@@ -209,6 +211,148 @@
         </table>
       </div>
     </div>
+
+    <!-- Mobilné karty -->
+    <div class="card-body d-md-none p-2">
+      {% for op in operacie %}
+      <div class="card mb-2 shadow-sm">
+        <div class="card-body">
+          <div class="d-flex justify-content-between align-items-start gap-2 mb-2">
+            <div>
+              <div class="fw-bold">{{ op.poradie }}. {{ op.nazov_operacie }}</div>
+              <small class="text-muted">Stroj: {{ op.stroj.nazov }}</small>
+            </div>
+            <span class="badge {% if op.dostupne_kusy > 0 %}bg-info{% else %}bg-secondary{% endif %}">
+              {{ op.dostupne_kusy }} ks
+            </span>
+          </div>
+
+          {% if op.operatori_list %}
+          <div class="mb-2">
+            <small class="text-muted">
+              Operátori:
+              {% for opr in op.operatori_list %}
+                {{ opr.operator.username }}{% if not forloop.last %}, {% endif %}
+              {% endfor %}
+            </small>
+          </div>
+          {% endif %}
+
+          <div class="d-flex flex-wrap gap-2 mb-2">
+            <span class="badge bg-success">OK: {{ op.vyrobene_kusy }} ks</span>
+            <span class="badge bg-danger">NOK: {{ op.nepodarky }} ks</span>
+            {% if op.stav == 'caka' %}
+              <span class="badge bg-secondary">⏳ Čaká</span>
+            {% elif op.stav == 'vyroba' %}
+              <span class="badge bg-warning text-dark">⚙️ V práci</span>
+            {% elif op.stav == 'hotova' %}
+              <span class="badge bg-success">✅ Hotová</span>
+            {% elif op.stav == 'pozastavena' %}
+              <span class="badge bg-secondary">⏸️ Pauza</span>
+            {% endif %}
+          </div>
+
+          <form method="post" class="d-grid gap-2">
+            {% csrf_token %}
+            <input type="hidden" name="operacia_id" value="{{ op.id }}">
+
+            {% if op.stav == 'caka' %}
+              <button type="submit" name="akcia" value="zacat"
+                      class="btn btn-success"
+                      {% if not op.moze_zacat_teraz %}
+                        disabled
+                        title="Predchádzajúca operácia musí najprv vyrobiť kusy"
+                      {% endif %}>
+                ▶ Začať
+              </button>
+
+            {% elif op.stav == 'vyroba' %}
+              <button type="submit" name="akcia" value="pauza" class="btn btn-warning">
+                ⏸ Pauza
+              </button>
+              <button type="button" class="btn btn-primary"
+                      data-bs-toggle="modal" data-bs-target="#ukonciModalMobile{{ op.id }}">
+                🔴 Ukončiť dávku
+              </button>
+
+            {% elif op.stav == 'pozastavena' %}
+              <button type="submit" name="akcia" value="pokracovat"
+                      class="btn btn-info"
+                      {% if not op.moze_pokracovat_teraz %}
+                        disabled
+                        title="Nie sú dostupné žiadne kusy"
+                      {% endif %}>
+                ▶ Pokračovať
+              </button>
+
+            {% elif op.stav == 'hotova' %}
+              {% if op.moze_pokracovat_teraz %}
+                <button type="submit" name="akcia" value="pokracovat"
+                        class="btn btn-info"
+                        title="Objednávke ešte chýbajú OK kusy - pokračujte v operácii">
+                  🔄 Pokračovať
+                </button>
+              {% else %}
+                <span class="text-success fw-semibold">✅ Hotovo</span>
+              {% endif %}
+            {% endif %}
+          </form>
+        </div>
+      </div>
+
+      <!-- Modal pre ukončenie dávky (mobil) -->
+      <div class="modal fade" id="ukonciModalMobile{{ op.id }}" tabindex="-1">
+        <div class="modal-dialog modal-dialog-scrollable">
+          <div class="modal-content">
+            <form method="post">
+              {% csrf_token %}
+              <input type="hidden" name="operacia_id" value="{{ op.id }}">
+              <input type="hidden" name="akcia" value="ukonci_davku">
+
+              <div class="modal-header">
+                <h5 class="modal-title">Ukončiť dávku: {{ op.nazov_operacie }}</h5>
+                <button type="button" class="btn-close" data-bs-dismiss="modal"></button>
+              </div>
+              <div class="modal-body">
+                <div class="alert alert-info">
+                  <strong>📦 Dostupné kusy: {{ op.dostupne_kusy }} ks</strong><br>
+                  <small>Už vyrobené: {{ op.vyrobene_kusy }} ks (OK) + {{ op.nepodarky }} ks (NOK)</small>
+                </div>
+
+                <div class="mb-3">
+                  <label class="form-label">Vyrobené kusy v tejto dávke (OK) *</label>
+                  <input type="number" name="vyrobene_kusy" class="form-control"
+                         min="0" max="{{ op.dostupne_kusy }}" required>
+                  <small class="text-muted">Max. {{ op.dostupne_kusy }} ks</small>
+                </div>
+
+                <div class="mb-3">
+                  <label class="form-label">Nepodarky v tejto dávke (NOK)</label>
+                  <input type="number" name="nepodarky" class="form-control"
+                         min="0" value="0">
+                </div>
+
+                <div class="alert alert-warning">
+                  <small>
+                    ⚠️ Po ukončení dávky:
+                    <ul class="mb-0">
+                      <li>OK kusy sa preposúvajú do ďalšej operácie</li>
+                      <li>Ak zostanú kusy, môžete pokračovať neskôr</li>
+                      <li>Ak už niet kusov, operácia sa označí ako HOTOVÁ</li>
+                    </ul>
+                  </small>
+                </div>
+              </div>
+              <div class="modal-footer">
+                <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">Zrušiť</button>
+                <button type="submit" class="btn btn-primary">Ukončiť dávku</button>
+              </div>
+            </form>
+          </div>
+        </div>
+      </div>
+      {% endfor %}
+    </div>
   </div>
 
   <!-- Tlačidlo uzavrieť zakázku -->
@@ -220,7 +364,7 @@
         <form method="post">
           {% csrf_token %}
           <button type="submit" name="akcia" value="uzavri_zakazku" 
-                  class="btn btn-success btn-lg"
+              class="btn btn-success btn-lg w-100"
                   onclick="return confirm('Naozaj chcete uzavrieť zakázku a naskladniť hotové diely?')">
             ✅ Uzavrieť zakázku a naskladniť
           </button>

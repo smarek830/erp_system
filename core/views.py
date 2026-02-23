@@ -12,6 +12,7 @@ from .models import (
 from django.http import JsonResponse, HttpResponse
 from django.views.decorators.http import require_POST
 from django.utils import timezone
+from django.template.loader import render_to_string
 from django.db.models import Q, Sum, Count, F  # ← DÔLEŽITÉ: F je tu!
 import json
 from .pdf_generator import generate_sprievodka_pdf
@@ -24,6 +25,113 @@ from openpyxl.styles import Font, PatternFill, Alignment
 def quick_logout(request):
     logout(request)
     return redirect('/accounts/login/')
+
+
+def offline_page(request):
+    return render(request, 'core/offline.html')
+
+
+def service_worker(request):
+        content = """const CACHE_NAME = 'erp-pwa-v1';
+const OFFLINE_URL = '/offline/';
+const PRECACHE_URLS = [
+    OFFLINE_URL,
+    '/',
+    '/manifest.webmanifest',
+    '/pwa-icon.svg'
+];
+
+self.addEventListener('install', (event) => {
+    event.waitUntil(
+        caches.open(CACHE_NAME).then((cache) => cache.addAll(PRECACHE_URLS))
+    );
+    self.skipWaiting();
+});
+
+self.addEventListener('activate', (event) => {
+    event.waitUntil(
+        caches.keys().then((keys) =>
+            Promise.all(
+                keys
+                    .filter((key) => key !== CACHE_NAME)
+                    .map((key) => caches.delete(key))
+            )
+        )
+    );
+    self.clients.claim();
+});
+
+self.addEventListener('fetch', (event) => {
+    if (event.request.method !== 'GET') return;
+
+    if (event.request.mode === 'navigate') {
+        event.respondWith(
+            fetch(event.request)
+                .then((response) => {
+                    const copy = response.clone();
+                    caches.open(CACHE_NAME).then((cache) => cache.put(event.request, copy));
+                    return response;
+                })
+                .catch(async () => {
+                    const cached = await caches.match(event.request);
+                    if (cached) return cached;
+                    return caches.match(OFFLINE_URL);
+                })
+        );
+        return;
+    }
+
+    const url = new URL(event.request.url);
+    if (url.origin !== self.location.origin) return;
+
+    event.respondWith(
+        caches.match(event.request).then((cached) => {
+            const networkFetch = fetch(event.request)
+                .then((response) => {
+                    const copy = response.clone();
+                    caches.open(CACHE_NAME).then((cache) => cache.put(event.request, copy));
+                    return response;
+                })
+                .catch(() => cached);
+
+            return cached || networkFetch;
+        })
+    );
+});
+"""
+    response = HttpResponse(content, content_type='application/javascript')
+    response['Service-Worker-Allowed'] = '/'
+    return response
+
+
+def web_manifest(request):
+    manifest = {
+        'name': 'ERP Systém - Kovovýroba',
+        'short_name': 'ERP Kov',
+        'start_url': '/',
+        'scope': '/',
+        'display': 'standalone',
+        'background_color': '#f8f9fa',
+        'theme_color': '#0d6efd',
+        'lang': 'sk',
+        'icons': [
+            {
+                'src': '/pwa-icon.svg',
+                'sizes': '512x512',
+                'type': 'image/svg+xml',
+                'purpose': 'any'
+            }
+        ]
+    }
+    return HttpResponse(
+        json.dumps(manifest, ensure_ascii=False),
+        content_type='application/manifest+json'
+    )
+
+
+def pwa_icon(request):
+    content = render_to_string('core/pwa/icon.svg')
+    return HttpResponse(content, content_type='image/svg+xml')
 
 # ========================================
 # ZÁKLADNÉ VIEWS (Pre adminov/technikov)

@@ -1,0 +1,18 @@
+{
+  "name": "ERP Systém - Kovovýroba",
+  "short_name": "ERP Kov",
+  "start_url": "/",
+  "scope": "/",
+  "display": "standalone",
+  "background_color": "#f8f9fa",
+  "theme_color": "#0d6efd",
+  "lang": "sk",
+  "icons": [
+    {
+      "src": "/static/core/pwa/icon.svg",
+      "sizes": "512x512",
+      "type": "image/svg+xml",
+      "purpose": "any"
+    }
+  ]
+}

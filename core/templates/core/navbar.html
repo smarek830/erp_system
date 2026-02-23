@@ -6,18 +6,18 @@
       <span class="navbar-toggler-icon"></span>
     </button>
 
-    <div class="collapse navbar-collapse" id="navbarNav">
+    <div class="collapse navbar-collapse mt-2 mt-lg-0" id="navbarNav">
       <ul class="navbar-nav me-auto">
         <li class="nav-item">
-          <a class="nav-link" href="/">🏠 Dashboard</a>
+          <a class="nav-link py-2" href="/">🏠 Dashboard</a>
         </li>
         <li class="nav-item">
-          <a class="nav-link" href="{% url 'plan_vyroby' %}">🏭 Plán výroby</a>
+          <a class="nav-link py-2" href="{% url 'plan_vyroby' %}">🏭 Plán výroby</a>
         </li>
 
         <!-- Sklad -->
         <li class="nav-item dropdown">
-          <a class="nav-link dropdown-toggle" href="#" role="button" data-bs-toggle="dropdown">
+          <a class="nav-link dropdown-toggle py-2" href="#" role="button" data-bs-toggle="dropdown">
             📦 Sklad
           </a>
           <ul class="dropdown-menu">
@@ -30,15 +30,15 @@
         </li>
 
         <li class="nav-item">
-          <a class="nav-link" href="{% url 'zoznam_produktov' %}">📋 Produkty</a>
+          <a class="nav-link py-2" href="{% url 'zoznam_produktov' %}">📋 Produkty</a>
         </li>
         <li class="nav-item">
-          <a class="nav-link" href="{% url 'zoznam_strojov' %}">⚙️ Stroje</a>
+          <a class="nav-link py-2" href="{% url 'zoznam_strojov' %}">⚙️ Stroje</a>
         </li>
 
         <!-- Administrácia -->
         <li class="nav-item dropdown">
-          <a class="nav-link dropdown-toggle" href="#" role="button" data-bs-toggle="dropdown">
+          <a class="nav-link dropdown-toggle py-2" href="#" role="button" data-bs-toggle="dropdown">
             ⚙️ Administrácia
           </a>
           <ul class="dropdown-menu">
@@ -49,10 +49,10 @@
       </ul>
 
       <!-- Pravá strana - user -->
-      <ul class="navbar-nav">
+      <ul class="navbar-nav mt-2 mt-lg-0">
         {% if user.is_authenticated %}
         <li class="nav-item dropdown">
-          <a class="nav-link dropdown-toggle" href="#" role="button" data-bs-toggle="dropdown">
+          <a class="nav-link dropdown-toggle py-2" href="#" role="button" data-bs-toggle="dropdown">
             👤 {{ user.username }}
           </a>
           <ul class="dropdown-menu dropdown-menu-end">
@@ -63,7 +63,7 @@
         </li>
         {% else %}
         <li class="nav-item">
-          <a class="nav-link" href="/admin/login/">🔐 Prihlásiť</a>
+          <a class="nav-link py-2" href="/admin/login/">🔐 Prihlásiť</a>
         </li>
         {% endif %}
       </ul>
