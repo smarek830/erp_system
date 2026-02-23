@@ -27,6 +27,7 @@ urlpatterns = [
     # Operátorské URL
     path('operator/', views.operator_dashboard, name='operator_dashboard'),
     path('operator/zakazka/<int:pk>/', views.operator_zakazka_detail, name='operator_zakazka_detail'),
+    path('operator/prevziat-zakazku/<int:pk>/', views.operator_prevziat_zakazku, name='operator_prevziat_zakazku'),
 
     # AJAX API
     path('api/operator/start/<int:objednavka_pk>/<int:operacia_pk>/', views.start_operation, name='start_operation'),

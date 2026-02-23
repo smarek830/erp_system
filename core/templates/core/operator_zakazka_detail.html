@@ -19,19 +19,27 @@
     </div>
     <div class="card-body">
       <div class="row text-center">
-        <div class="col-md-3">
-          <h5 class="text-muted mb-1">Množstvo</h5>
+        <div class="col-md-2">
+          <h5 class="text-muted mb-1">Požadované</h5>
           <h3>{{ zakazka.mnozstvo }} ks</h3>
         </div>
-        <div class="col-md-3">
-          <h5 class="text-muted mb-1">Vyrobené</h5>
-          <h3 class="text-success">{{ zakazka.vyrobene_mnozstvo }} ks</h3>
+        <div class="col-md-2">
+          <h5 class="text-muted mb-1">OK kusy</h5>
+          <h3 class="text-success">{{ zakazka.celkom_ok_kusy }} ks</h3>
         </div>
-        <div class="col-md-3">
-          <h5 class="text-muted mb-1">Zostáva</h5>
+        <div class="col-md-2">
+          <h5 class="text-muted mb-1">NOK kusy</h5>
+          <h3 class="text-danger">{{ zakazka.celkom_nok_kusy }} ks</h3>
+        </div>
+        <div class="col-md-2">
+          <h5 class="text-muted mb-1">Zostáva OK</h5>
           <h3 class="text-warning">{{ zakazka.zostava_vyroba }} ks</h3>
         </div>
-        <div class="col-md-3">
+        <div class="col-md-2">
+          <h5 class="text-muted mb-1">Celkom vyrobiť</h5>
+          <h3 class="text-info">{{ zakazka.potrebne_kusy_celkom }} ks</h3>
+        </div>
+        <div class="col-md-2">
           <h5 class="text-muted mb-1">Termín</h5>
           <h3 class="{% if zakazka.datum_pozadovane < dnes %}text-danger{% endif %}">
             {{ zakazka.datum_pozadovane|date:"d.m.Y" }}
@@ -130,7 +138,15 @@
                     </button>
                   
                   {% elif op.stav == 'hotova' %}
-                    <span class="text-success">✅ Hotovo</span>
+                    {% if op.moze_pokracovat_teraz %}
+                      <button type="submit" name="akcia" value="pokracovat" 
+                              class="btn btn-info btn-sm"
+                              title="Objednávke ešte chýbajú OK kusy - pokračujte v operácii">
+                        🔄 Pokračovať
+                      </button>
+                    {% else %}
+                      <span class="text-success">✅ Hotovo</span>
+                    {% endif %}
                   {% endif %}
                 </form>
 

@@ -1,6 +1,7 @@
 from multiprocessing import context
 from urllib import request
 from django.contrib.auth.decorators import login_required, permission_required
+from django.contrib.auth import logout
 from django.shortcuts import render, get_object_or_404, redirect
 from .models import (
     Produkt, Objednavka, Stroj, VyrobnyZaznam, KontrolaKvality, 
@@ -17,6 +18,12 @@ from .pdf_generator import generate_sprievodka_pdf
 from datetime import datetime, timedelta
 import openpyxl
 from openpyxl.styles import Font, PatternFill, Alignment
+
+
+@login_required
+def quick_logout(request):
+    logout(request)
+    return redirect('/accounts/login/')
 
 # ========================================
 # ZÁKLADNÉ VIEWS (Pre adminov/technikov)
@@ -157,29 +164,27 @@ def export_plan_excel(request):
     return response
 
 @login_required
+@permission_required("core.view_objednavka", raise_exception=True)
 def detail_zakazky(request, pk):
-    """Detail zakázky s výrobnou dávkou a operáciami"""
+    """Read-only manažérsky prehľad zakázky."""
     zakazka = get_object_or_404(Objednavka, pk=pk)
-    
-    # Objednávka má OneToOne na VyrobnaDavka cez related_name='vyrobna_davka'
-    vyrobna_davka = None
+
+    vyrobne_davky = []
     if hasattr(zakazka, 'vyrobna_davka') and zakazka.vyrobna_davka:
         vyrobna_davka = zakazka.vyrobna_davka
-        
-        # Ak dávka existuje, ale nemá operácie, vytvor ich
         if not vyrobna_davka.operacie.exists():
             vyrobna_davka.vytvor_operacie()
-    
-    # História meraní (ak existuje)
-    merania = []
-    
+        vyrobne_davky.append(vyrobna_davka)
+
+    operacie = zakazka.operacie.select_related('stroj', 'operator').order_by('poradie')
+
     context = {
         'zakazka': zakazka,
-        'vyrobna_davka': vyrobna_davka,
-        'merania': merania,
+        'vyrobne_davky': vyrobne_davky,
+        'operacie': operacie,
         'dnes': timezone.now().date(),
     }
-    
+
     return render(request, 'core/detail_zakazky.html', context)
 
 
@@ -249,9 +254,27 @@ def operator_dashboard(request):
         stav='vyroba', zaznamy__operator=request.user,
         zaznamy__typ_udalosti='START'
     ).distinct()
-    nove = Objednavka.objects.filter(stav='nova').order_by('datum_pozadovane')
+    nove_priradene = Objednavka.objects.filter(
+        stav='nova', priradeni_operatori=request.user
+    ).order_by('datum_pozadovane')
+    nove_dostupne = Objednavka.objects.filter(
+        stav='nova'
+    ).exclude(
+        priradeni_operatori__isnull=False
+    ).order_by('datum_pozadovane')
+    
+    # DEBUG output
+    print(f"DEBUG operator_dashboard:")
+    print(f"  - rozpracovane: {rozpracovane.count()}")
+    print(f"  - nove_priradene: {nove_priradene.count()}")
+    print(f"  - nove_dostupne: {nove_dostupne.count()}")
+    for obj in nove_dostupne[:3]:
+        print(f"    - #{obj.cislo_objednavky}")
+    
     return render(request, 'core/operator/dashboard.html', {
-        'rozpracovane': rozpracovane, 'nove': nove,
+        'rozpracovane': rozpracovane, 
+        'nove_priradene': nove_priradene,
+        'nove_dostupne': nove_dostupne,
     })
 
 @login_required
@@ -262,6 +285,12 @@ def operator_zakazka_detail(request, pk):
     from .models import OperaciaVyroby, OperatorNaOperacii
     
     zakazka = get_object_or_404(Objednavka, pk=pk)
+    
+    # Kontrola, či je operátor priradený k objednávke
+    if request.user not in zakazka.priradeni_operatori.all() and not zakazka.zaznamy.filter(operator=request.user).exists():
+        messages.error(request, '⚠️ Nie ste priradený k tejto objednávke!')
+        return redirect('operator_dashboard')
+    
     operacie = zakazka.operacie.all().order_by('poradie')
     
     # Spracovanie akcií operátora
@@ -276,7 +305,7 @@ def operator_zakazka_detail(request, pk):
                 # Validácia - môžem začať?
                 if not operacia.moze_zacat():
                     predch = operacia.get_predchadzajuca_operacia()
-                    if predch and predch.kusy_na_vystupe <= 0:
+                    if predch and predch.vyrobene_kusy <= 0:
                         messages.error(
                             request, 
                             f'⚠️ Nemôžete začať operáciu {operacia.nazov_operacie}! '
@@ -394,7 +423,7 @@ def operator_zakazka_detail(request, pk):
         op.max_kusy = op.get_max_vyrobitelne_kusy()
         op.operatori_list = op.operatori.all()
         op.moze_zacat_teraz = op.moze_zacat()
-        op.moze_pokracovat_teraz = op.moze_pokracovat()
+        # moze_pokracovat_teraz je @property v modele, nemožno priraďovať
     
     # Skontroluj, či sa môže zakázka uzavrieť
     moze_uzavriet, dovod = zakazka.moze_sa_uzavriet()
@@ -417,37 +446,67 @@ def operator_zakazka_detail(request, pk):
 @require_POST
 def start_operation(request, objednavka_pk, operacia_pk):
     objednavka = get_object_or_404(Objednavka, pk=objednavka_pk)
-    operacia = get_object_or_404(Operacia, pk=operacia_pk)
+    operacia_vyroby = get_object_or_404(OperaciaVyroby, pk=operacia_pk)
+    
+    # Kontrola, či je operátor priradený k objednávke
+    if request.user not in objednavka.priradeni_operatori.all() and not objednavka.zaznamy.filter(operator=request.user).exists():
+        return JsonResponse({'status': 'error', 'message': 'Nie ste priradený k tejto objednávke!'})
+    
+    # Kontrola, či operácia patrí k objednávke
+    if operacia_vyroby.objednavka != objednavka:
+        return JsonResponse({'status': 'error', 'message': 'Operácia nepatrí k tejto objednávke'})
+    
+    # Kontrola, či operácia môže pokračovať (pre pozastavené a hotové operácie)
+    if operacia_vyroby.stav in ['pozastavena', 'hotova']:
+        if not operacia_vyroby.moze_pokracovat():
+            return JsonResponse({'status': 'error', 'message': 'Operácia nemôže pokračovať - nie sú dostupné kusy'})
     
     VyrobnyZaznam.objects.create(
         objednavka=objednavka,
-        operacia=operacia,
+        operacia=operacia_vyroby.operacia_sablona,
         operator=request.user,
         typ_udalosti='START'
     )
+    
+    # Priradenie operátora k operácii
+    operacia_vyroby.operator = request.user
+    operacia_vyroby.stav = 'vyroba'
+    operacia_vyroby.datum_zaciatku = timezone.now()
+    operacia_vyroby.save()
     
     if objednavka.stav == 'nova':
         objednavka.stav = 'vyroba'
         objednavka.save()
     
-    return JsonResponse({'status': 'ok', 'message': f'Operácia {operacia.nazov_operacie} začatá'})
+    return JsonResponse({'status': 'ok', 'message': f'Operácia {operacia_vyroby.nazov_operacie} začatá'})
 
 @login_required
 @require_POST
 def pause_operation(request, objednavka_pk, operacia_pk):
     objednavka = get_object_or_404(Objednavka, pk=objednavka_pk)
-    operacia = get_object_or_404(Operacia, pk=operacia_pk)
+    operacia_vyroby = get_object_or_404(OperaciaVyroby, pk=operacia_pk)
+    
+    # Kontrola, či je operátor priradený k objednávke
+    if request.user not in objednavka.priradeni_operatori.all() and not objednavka.zaznamy.filter(operator=request.user).exists():
+        return JsonResponse({'status': 'error', 'message': 'Nie ste priradený k tejto objednávke!'})
+    
+    # Kontrola, či operácia patrí k objednávke
+    if operacia_vyroby.objednavka != objednavka:
+        return JsonResponse({'status': 'error', 'message': 'Operácia nepatrí k tejto objednávke'})
     
     data = json.loads(request.body)
     dovod = data.get('dovod', '')
     
     VyrobnyZaznam.objects.create(
         objednavka=objednavka,
-        operacia=operacia,
+        operacia=operacia_vyroby.operacia_sablona,
         operator=request.user,
         typ_udalosti='PAUZA',
         dovod_pauzy=dovod
     )
+    
+    operacia_vyroby.stav = 'pozastavena'
+    operacia_vyroby.save()
     
     objednavka.stav = 'pozastavene'
     objednavka.save()
@@ -458,37 +517,69 @@ def pause_operation(request, objednavka_pk, operacia_pk):
 @require_POST
 def end_operation(request, objednavka_pk, operacia_pk):
     objednavka = get_object_or_404(Objednavka, pk=objednavka_pk)
-    operacia = get_object_or_404(Operacia, pk=operacia_pk)
+    operacia_vyroby = get_object_or_404(OperaciaVyroby, pk=operacia_pk)
+    
+    # Kontrola, či je operátor priradený k objednávke
+    if request.user not in objednavka.priradeni_operatori.all() and not objednavka.zaznamy.filter(operator=request.user).exists():
+        return JsonResponse({'status': 'error', 'message': 'Nie ste priradený k tejto objednávke!'})
+    
+    # Kontrola, či operácia patrí k objednávke
+    if operacia_vyroby.objednavka != objednavka:
+        return JsonResponse({'status': 'error', 'message': 'Operácia nepatrí k tejto objednávke'})
     
     VyrobnyZaznam.objects.create(
         objednavka=objednavka,
-        operacia=operacia,
+        operacia=operacia_vyroby.operacia_sablona,
         operator=request.user,
         typ_udalosti='STOP'
     )
     
-    return JsonResponse({'status': 'ok', 'message': f'Operácia {operacia.nazov_operacie} ukončená'})
+    operacia_vyroby.stav = 'hotova'
+    operacia_vyroby.datum_ukoncenia = timezone.now()
+    operacia_vyroby.save()
+    
+    return JsonResponse({'status': 'ok', 'message': f'Operácia {operacia_vyroby.nazov_operacie} ukončená'})
 
 @login_required
 @require_POST
 def end_work(request, pk):
     objednavka = get_object_or_404(Objednavka, pk=pk)
     
+    # Kontrola, či je operátor priradený k objednávke
+    if request.user not in objednavka.priradeni_operatori.all() and not objednavka.zaznamy.filter(operator=request.user).exists():
+        return JsonResponse({'status': 'error', 'message': 'Nie ste priradený k tejto objednávke!'})
+    
+    # Kontrola, či sú všetky operácie ukončené
+    running_operations = objednavka.operacie.filter(stav='vyroba')
+    if running_operations.exists():
+        operation_names = ', '.join([op.nazov_operacie for op in running_operations])
+        return JsonResponse({
+            'status': 'error', 
+            'message': f'Nemôžete ukončiť prácu! Nasledujúce operácie sú stále aktívné: {operation_names}'
+        })
+    
     fotka = request.FILES.get('fotka')
-    pocet_ok = request.POST.get('pocet_ok', 0)
-    pocet_nok = request.POST.get('pocet_nok', 0)
+    pocet_ok = int(request.POST.get('pocet_ok', 0))
+    pocet_nok = int(request.POST.get('pocet_nok', 0))
     poznamka = request.POST.get('poznamka', '')
+    
+    # Validácia - ak sú NOK kusy, musia byť najprv nahlásené ako problém
+    if pocet_nok > 0:
+        return JsonResponse({
+            'status': 'error', 
+            'message': f'Nemôžete ukončiť prácu s {pocet_nok} NOK kusmi! Najprv nahláste problém pomocou formulára "Nahlásiť problém".'
+        })
     
     KontrolaKvality.objects.create(
         objednavka=objednavka,
         operator=request.user,
         namerana_hodnota=f"OK: {pocet_ok}, NOK: {pocet_nok}",
-        vysledok_ok=(int(pocet_nok) == 0),
+        vysledok_ok=True,
         fotka=fotka,
         poznamka=poznamka
     )
     
-    objednavka.vyrobene_mnozstvo += int(pocet_ok)
+    objednavka.vyrobene_mnozstvo += pocet_ok
     
     if objednavka.je_dokoncena():
         objednavka.stav = 'hotovo'
@@ -504,6 +595,10 @@ def end_work(request, pk):
 def report_problem(request, pk):
     objednavka = get_object_or_404(Objednavka, pk=pk)
     
+    # Kontrola, či je operátor priradený k objednávke
+    if request.user not in objednavka.priradeni_operatori.all() and not objednavka.zaznamy.filter(operator=request.user).exists():
+        return JsonResponse({'status': 'error', 'message': 'Nie ste priradený k tejto objednávke!'})
+    
     data = json.loads(request.body)
     typ_problemu = data.get('typ_problemu')
     pocet_kusov = data.get('pocet_kusov', 0)
@@ -518,6 +613,33 @@ def report_problem(request, pk):
     )
     
     return JsonResponse({'status': 'ok', 'message': 'Problém nahlásený'})
+
+@login_required
+@require_POST
+def operator_prevziat_zakazku(request, pk):
+    """Operátor prevzme novú objednávku priamo bez sub-batch"""
+    objednavka = get_object_or_404(Objednavka, pk=pk)
+    
+    # Kontrola, či je objednávka v stave 'nova' a nie je už priradená
+    if objednavka.stav != 'nova':
+        return JsonResponse({'status': 'error', 'message': 'Objednávka nie je dostupná na prevzatie!'})
+    
+    if objednavka.priradeni_operatori.exists():
+        return JsonResponse({'status': 'error', 'message': 'Objednávka už má priradených operátorov!'})
+    
+    # Priradiť operátora k objednávke
+    objednavka.priradeni_operatori.add(request.user)
+    objednavka.stav = 'vyroba'
+    objednavka.save()
+    
+    # Vytvoriť záznam o začatí práce
+    VyrobnyZaznam.objects.create(
+        objednavka=objednavka,
+        operator=request.user,
+        typ_udalosti='START'
+    )
+    
+    return JsonResponse({'status': 'ok', 'message': f'Zakázka #{objednavka.cislo_objednavky} bola prevzatá!'})
 
 @login_required
 def download_sprievodka(request, pk):

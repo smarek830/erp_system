@@ -168,6 +168,14 @@ class Objednavka(models.Model):
     stav = models.CharField(max_length=20, choices=STAVY, default='nova', verbose_name="Stav")
     poznamka = models.TextField(blank=True, verbose_name="Poznámka")
 
+    priradeni_operatori = models.ManyToManyField(
+        User,
+        blank=True,
+        related_name='priradene_objednavky',
+        verbose_name="Priradení operátori",
+        help_text="Operátori priradení k tejto objednávke"
+    )
+
     kontrakt = models.ForeignKey(
         'Kontrakt',
         on_delete=models.SET_NULL,
@@ -206,13 +214,72 @@ class Objednavka(models.Model):
     )
     # ------------------------------
 
+    @property
+    def celkom_ok_kusy(self):
+        """Celkový počet OK kusov zo všetkých operácií"""
+        posledna_operacia = self.operacie.order_by('-poradie').first()
+        if posledna_operacia:
+            return posledna_operacia.vyrobene_kusy
+        return self.vyrobene_mnozstvo
+    
+    @property
+    def celkom_nok_kusy(self):
+        """Celkový počet NOK kusov zo všetkých operácií"""
+        return self.operacie.aggregate(models.Sum('nepodarky'))['nepodarky__sum'] or 0
+    
+    @property
+    def celkom_vyrobenych_kusy(self):
+        """Celkový počet vyrobených kusov (OK + NOK)"""
+        return self.celkom_ok_kusy + self.celkom_nok_kusy
+
     def zostava_vyroba(self):
-        return self.mnozstvo - self.vyrobene_mnozstvo
+        """Zostáva vyrobiť - berie do úvahy NOK kusy (kompenzácia)"""
+        # Potrebujeme dosiahnuť self.mnozstvo OK kusov
+        # Takže zostáva = mnozstvo - OK kusy (NOK kusy sa nepočítajú)
+        return self.mnozstvo - self.celkom_ok_kusy
+    
+    @property
+    def potrebne_kusy_celkom(self):
+        """Celkové potrebné kusy vrátane kompenzácie za NOK"""
+        return self.mnozstvo + self.celkom_nok_kusy
 
     def je_dokoncena(self):
-        return self.vyrobene_mnozstvo >= self.mnozstvo
+        # Kontrola množstva - musí byť dosť OK kusov
+        if self.celkom_ok_kusy < self.mnozstvo:
+            return False
+        
+        # Kontrola kvality - všetky kontroly musia byť OK
+        posledna_kontrola = self.kontroly.last()
+        if posledna_kontrola and not posledna_kontrola.vysledok_ok:
+            return False
+            
+        return True
+
+    def _vygeneruj_cislo_objednavky(self):
+        """Vygeneruje nové číslo objednávky vo formáte OBJ-YYYY-XXX."""
+        year = timezone.now().year
+        prefix = f"OBJ-{year}-"
+        posledna = Objednavka.objects.filter(
+            cislo_objednavky__startswith=prefix
+        ).order_by('-cislo_objednavky').first()
+
+        poradie = 1
+        if posledna:
+            cast = posledna.cislo_objednavky.replace(prefix, "")
+            if cast.isdigit():
+                poradie = int(cast) + 1
+
+        kandidat = f"{prefix}{poradie:03d}"
+        while Objednavka.objects.filter(cislo_objednavky=kandidat).exists():
+            poradie += 1
+            kandidat = f"{prefix}{poradie:03d}"
+
+        return kandidat
 
     def save(self, *args, **kwargs):
+        if not self.cislo_objednavky:
+            self.cislo_objednavky = self._vygeneruj_cislo_objednavky()
+
         if self.pk:
             stara_objednavka = Objednavka.objects.get(pk=self.pk)
             if stara_objednavka.stav != 'vyroba' and self.stav == 'vyroba':
@@ -257,14 +324,10 @@ class Objednavka(models.Model):
             zoznam = ", ".join([f"{op.nazov_operacie}" for op in nehotove])
             return False, f"Neukončené operácie: {zoznam}"
 
-        # Ak vyrobene_mnozstvo nie je nastavené, doplň z poslednej operácie
-        if self.vyrobene_mnozstvo < self.mnozstvo:
-            posledna = operacie.order_by('-poradie').first()
-            if posledna and posledna.vyrobene_kusy >= self.mnozstvo:
-                self.vyrobene_mnozstvo = posledna.vyrobene_kusy
-                self.save(update_fields=['vyrobene_mnozstvo'])
-            else:
-                return False, f"Nevyrobené množstvo: {self.zostava_vyroba()} ks"
+        # Kontrola, či je dosť OK kusov
+        if self.celkom_ok_kusy < self.mnozstvo:
+            zostava = self.zostava_vyroba()
+            return False, f"Nedostatočný počet OK kusov: zostáva {zostava} ks (+ {self.celkom_nok_kusy} NOK)"
 
         return True, "OK"
 
@@ -288,13 +351,16 @@ class Objednavka(models.Model):
             }
         )
 
+        # Naskladni len OK kusy
+        mnozstvo_ok = self.celkom_ok_kusy
+
         PrijemkaHotovychDielov.objects.create(
             sklad=sklad,
             objednavka=self,
-            mnozstvo=self.vyrobene_mnozstvo,
+            mnozstvo=mnozstvo_ok,
             datum=timezone.now(),
             operator=None,
-            poznamka=f"Automatické naskladnenie z objednávky #{self.cislo_objednavky}"
+            poznamka=f"Automatické naskladnenie z objednávky #{self.cislo_objednavky} ({mnozstvo_ok} OK, {self.celkom_nok_kusy} NOK)"
         )
 
     class Meta:
@@ -314,7 +380,30 @@ class Kontrakt(models.Model):
     datum_do = models.DateField(verbose_name="Platnosť DO")
     je_skladom = models.BooleanField(default=False, verbose_name="Je tovar skladom?")
 
+    def _vygeneruj_cislo_kontraktu(self):
+        """Vygeneruje nové číslo kontraktu vo formáte KONTR-YYYY-XXX."""
+        year = timezone.now().year
+        prefix = f"KONTR-{year}-"
+        posledny = Kontrakt.objects.filter(
+            cislo_kontraktu__startswith=prefix
+        ).order_by('-cislo_kontraktu').first()
+
+        poradie = 1
+        if posledny:
+            cast = posledny.cislo_kontraktu.replace(prefix, "")
+            if cast.isdigit():
+                poradie = int(cast) + 1
+
+        kandidat = f"{prefix}{poradie:03d}"
+        while Kontrakt.objects.filter(cislo_kontraktu=kandidat).exists():
+            poradie += 1
+            kandidat = f"{prefix}{poradie:03d}"
+
+        return kandidat
+
     def save(self, *args, **kwargs):
+        if not self.cislo_kontraktu:
+            self.cislo_kontraktu = self._vygeneruj_cislo_kontraktu()
         if self.zostavajuce_mnozstvo is None:
             self.zostavajuce_mnozstvo = self.pocet_kusov_celkovo
         super().save(*args, **kwargs)
@@ -498,12 +587,25 @@ class OperaciaVyroby(models.Model):
             poradie=self.poradie + 1
         ).first()
 
+    def cielove_kusy_na_spracovanie(self):
+        """Koľko kusov musí táto operácia celkovo spracovať (OK+NOK)."""
+        nok_od_tejto_operacie = self.objednavka.operacie.filter(
+            poradie__gte=self.poradie
+        ).aggregate(models.Sum('nepodarky'))['nepodarky__sum'] or 0
+        return self.objednavka.mnozstvo + nok_od_tejto_operacie
+
     def get_dostupne_kusy_na_vstupe(self):
+        """Vráti počet kusov dostupných na spracovanie"""
         predch = self.get_predchadzajuca_operacia()
+        
+        # Pre všetky operácie - dynamika podľa NOK kompenzácie
         if predch is None:
-            return self.objednavka.mnozstvo - self.kusy_spracovane_celkom()
+            ciel = self.cielove_kusy_na_spracovanie()
+            return max(ciel - self.kusy_spracovane_celkom(), 0)
         else:
-            return predch.kusy_na_vystupe - self.kusy_spracovane_celkom()
+            ciel = self.cielove_kusy_na_spracovanie()
+            limit_vstupu = min(predch.vyrobene_kusy, ciel)
+            return max(limit_vstupu - self.kusy_spracovane_celkom(), 0)
 
     def kusy_spracovane_celkom(self):
         return self.vyrobene_kusy + self.nepodarky
@@ -519,18 +621,55 @@ class OperaciaVyroby(models.Model):
         if predch is None:
             return True
 
-        if predch.kusy_na_vystupe <= 0:
+        if predch.vyrobene_kusy <= 0:
             return False
 
         dostupne = self.get_dostupne_kusy_na_vstupe()
         return dostupne > 0
 
     def moze_pokracovat(self):
-        if self.stav != 'pozastavena':
-            return False
-
-        dostupne = self.get_dostupne_kusy_na_vstupe()
-        return dostupne > 0
+        """Môže pokračovať vo výrobe?"""
+        # Pozastavené operácie môžu pokračovať ak sú dostupné kusy
+        if self.stav == 'pozastavena':
+            dostupne = self.get_dostupne_kusy_na_vstupe()
+            return dostupne > 0
+        
+        # Hotové operácie môžu pokračovať ak ešte nie je dosiahnutý požadovaný počet OK kusov
+        # (pre medzioperácie: ak sú dostupné kusy; pre poslednú: ak chýbajú OK kusy)
+        if self.stav == 'hotova':
+            nasledujuca = self.get_nasledujuca_operacia()
+            if nasledujuca is None:  # Posledná operácia
+                return self.vyrobene_kusy < self.objednavka.mnozstvo
+            else:  # Medzioperácia
+                if self.objednavka.zostava_vyroba() <= 0:
+                    return False
+                dostupne = self.get_dostupne_kusy_na_vstupe()
+                return dostupne > 0
+        
+        return False
+    
+    @property
+    def moze_pokracovat_teraz(self):
+        """Či môže operácia ihneď pokračovať (read-only property pre UI)"""
+        return self.moze_pokracovat()
+    
+    @property
+    def ok_kusy(self):
+        """Alias pre vyrobene_kusy (OK kusy) pre UI"""
+        return self.vyrobene_kusy
+    
+    @property
+    def nok_kusy(self):
+        """Alias pre nepodarky (NOK kusy) pre UI"""
+        return self.nepodarky
+    
+    @property
+    def posledny_zaznam(self):
+        """Posledný výrobný záznam tejto operácie"""
+        return VyrobnyZaznam.objects.filter(
+            objednavka=self.objednavka,
+            operacia=self.operacia_sablona
+        ).order_by('-cas_zaznamu').first()
 
     def ukonci_davku(self, vyrobene, nepodarky):
         max_kusy = self.get_max_vyrobitelne_kusy()
@@ -542,15 +681,24 @@ class OperaciaVyroby(models.Model):
 
         self.vyrobene_kusy += vyrobene
         self.nepodarky += nepodarky
-        self.kusy_na_vystupe += vyrobene
+        self.kusy_na_vystupe = self.vyrobene_kusy
 
         nasledujuca = self.get_nasledujuca_operacia()
         if nasledujuca:
-            nasledujuca.kusy_na_vstupe = self.kusy_na_vystupe
+            nasledujuca.kusy_na_vstupe = self.vyrobene_kusy
             nasledujuca.save()
 
-        zostava = self.get_dostupne_kusy_na_vstupe()
-        if zostava <= 0:
+        # Pre POSLEDNÚ operáciu - kontroluj či je dosť OK kusov pre objednávku
+        # Pre MEDZIOPERÁCIE - kontroluj či sú spracované všetky vstupné kusy
+        if nasledujuca is None:
+            # Posledná operácia - kontroluj požadovaný počet OK kusov
+            je_hotova = self.vyrobene_kusy >= self.objednavka.mnozstvo
+        else:
+            # Medzioperácia - kontroluj či sú spracované všetky vstupné kusy
+            zostava = self.get_dostupne_kusy_na_vstupe()
+            je_hotova = zostava <= 0
+        
+        if je_hotova:
             self.stav = 'hotova'
             self.datum_ukoncenia = timezone.now()
 
@@ -575,6 +723,17 @@ class OperaciaVyroby(models.Model):
     
     def __str__(self):
         return f"{self.poradie}. {self.nazov_operacie} - {self.objednavka.cislo_objednavky}"
+    
+    @property
+    def get_stav_display(self):
+        """Display method for state badge"""
+        display_map = {
+            'caka': '⏳ Čaká',
+            'vyroba': '⚙️ V práci',
+            'pozastavena': '⏸️ Pozastavená',
+            'hotova': '✅ Hotová',
+        }
+        return display_map.get(self.stav, self.stav)
 
     class Meta:
         verbose_name = "Operácia výroby"

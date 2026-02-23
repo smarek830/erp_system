@@ -147,6 +147,9 @@ class ObjednavkaAdmin(admin.ModelAdmin):
         ('Termíny', {
             'fields': ('datum_zadania', 'datum_pozadovane')
         }),
+        ('Priradenie', {
+            'fields': ('priradeni_operatori',)
+        }),
         ('Stav', {
             'fields': ('stav', 'poznamka')
         }),

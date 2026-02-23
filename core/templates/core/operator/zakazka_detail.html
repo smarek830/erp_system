@@ -61,7 +61,8 @@
                             <th>Operácia</th>
                             <th>Stroj</th>
                             <th>Čas</th>
-                            <th>Posledný záznam</th>
+                            <th>Stav</th>
+                            <th>Vyrobené</th>
                             <th class="text-end">Akcia</th>
                         </tr>
                     </thead>
@@ -73,26 +74,42 @@
                             <td>{{ op.stroj.nazov }}</td>
                             <td>{{ op.cas_kus }} min/ks</td>
                             <td>
-                                {% if op.posledny_zaznam %}
-                                    <span class="badge {% if op.posledny_zaznam.typ_udalosti == 'START' %}bg-success{% elif op.posledny_zaznam.typ_udalosti == 'PAUZA' %}bg-warning{% else %}bg-secondary{% endif %}">
-                                        {{ op.posledny_zaznam.get_typ_udalosti_display }}
-                                    </span>
-                                {% else %}
-                                    <span class="text-muted">-</span>
+                                {% if op.stav == 'caka' %}
+                                    <span class="badge bg-secondary">⏳ Čaká</span>
+                                {% elif op.stav == 'vyroba' %}
+                                    <span class="badge bg-warning text-dark">⚙️ V práci</span>
+                                {% elif op.stav == 'pozastavena' %}
+                                    <span class="badge bg-secondary">⏸️ Pozastavená</span>
+                                {% elif op.stav == 'hotova' %}
+                                    {% if op.moze_pokracovat_teraz %}
+                                        <span class="badge bg-info">✅ Hotová (⚠️ možnosť pokr.)</span>
+                                    {% else %}
+                                        <span class="badge bg-success">✅ Hotová</span>
+                                    {% endif %}
+                                {% endif %}
+                            </td>
+                            <td class="text-center">
+                                <span class="badge bg-success">{{ op.ok_kusy }} OK</span>
+                                {% if op.nok_kusy > 0 %}
+                                    <span class="badge bg-danger">{{ op.nok_kusy }} NOK</span>
                                 {% endif %}
                             </td>
                             <td class="text-end">
-                                <div class="btn-group">
-                                    {% if not op.posledny_zaznam or op.posledny_zaznam.typ_udalosti != 'START' %}
-                                        <button onclick="startOperation({{ objednavka.pk }}, {{ op.pk }})" 
-                                                class="btn btn-success btn-sm">▶️ Začať</button>
-                                    {% endif %}
-                                    
-                                    {% if op.posledny_zaznam and op.posledny_zaznam.typ_udalosti == 'START' %}
+                                <div class="btn-group" role="group">
+                                    {% if op.stav == 'vyroba' and op.posledny_zaznam.typ_udalosti == 'START' %}
                                         <button onclick="pauseOperation({{ objednavka.pk }}, {{ op.pk }})" 
-                                                class="btn btn-warning btn-sm">⏸️ Pauza</button>
+                                                class="btn btn-warning btn-sm">⏸️</button>
                                         <button onclick="endOperation({{ objednavka.pk }}, {{ op.pk }})" 
-                                                class="btn btn-danger btn-sm">⏹️ Koniec</button>
+                                                class="btn btn-danger btn-sm">⏹️</button>
+                                    {% elif op.stav in 'caka,pozastavena' or op.moze_pokracovat_teraz %}
+                                        <button onclick="startOperation({{ objednavka.pk }}, {{ op.pk }})" 
+                                                class="btn btn-success btn-sm">
+                                            {% if op.stav == 'hotova' %}
+                                                🔄 Pokračovať
+                                            {% else %}
+                                                ▶️ Začať
+                                            {% endif %}
+                                        </button>
                                     {% endif %}
                                 </div>
                             </td>
@@ -121,6 +138,9 @@
                         <div class="mb-3">
                             <label class="form-label">Počet nepodarkov</label>
                             <input type="number" name="pocet_nok" class="form-control" min="0" value="0">
+                            <div class="form-text text-warning">
+                                ⚠️ Ak máte nepodarky, najprv ich nahláste ako problém nižšie.
+                            </div>
                         </div>
                         <div class="mb-3">
                             <label class="form-label">Fotka výrobku (voliteľné)</label>

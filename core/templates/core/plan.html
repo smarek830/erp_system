@@ -7,8 +7,12 @@
         <a href="{% url 'export_plan_excel' %}" class="btn btn-success btn-sm">
             📊 Export Excel
         </a>
+        {% if perms.core.add_kontrakt %}
             <a href="{% url 'novy_kontrakt' %}" class="btn btn-info btn-sm">📋 Nový kontrakt</a>
-                    <a href="{% url 'nova_objednavka' %}" class="btn btn-primary btn-sm">➕ Nová zakázka</a>
+        {% endif %}
+        {% if perms.core.add_objednavka %}
+            <a href="{% url 'nova_objednavka' %}" class="btn btn-primary btn-sm">➕ Nová zakázka</a>
+        {% endif %}
     </div>
 </div>
 
@@ -122,14 +126,18 @@
                                 </td>
                                 <td class="text-end">
                                     <div class="btn-group" role="group">
-                                        <a href="{% url 'vytvor_davku_z_kontraktu' kontrakt_pk=kontrakt.pk %}" 
-                                           class="btn btn-success btn-sm" title="Vytvoriť výrobnú dávku">
-                                            ➕ Dávka
-                                        </a>
-                                        <a href="/admin/core/kontrakt/{{ kontrakt.pk }}/change/" 
-                                           class="btn btn-outline-primary btn-sm" title="Upraviť">
-                                            ✏️
-                                        </a>
+                                        {% if perms.core.add_vyrobnadavka %}
+                                            <a href="{% url 'vytvor_davku_z_kontraktu' kontrakt_pk=kontrakt.pk %}" 
+                                               class="btn btn-success btn-sm" title="Vytvoriť výrobnú dávku">
+                                                ➕ Dávka
+                                            </a>
+                                        {% endif %}
+                                        {% if perms.core.change_kontrakt %}
+                                            <a href="/admin/core/kontrakt/{{ kontrakt.pk }}/change/" 
+                                               class="btn btn-outline-primary btn-sm" title="Upraviť">
+                                                ✏️
+                                            </a>
+                                        {% endif %}
                                     </div>
                                 </td>
                             </tr>
@@ -217,11 +225,9 @@
                                     <div class="btn-group" role="group">
                                         <a href="{% url 'detail_zakazky' pk=obj.pk %}" 
                                            class="btn btn-outline-info btn-sm">👁️</a>
-                                        <a href="/admin/core/objednavka/{{ obj.pk }}/change/" 
-                                           class="btn btn-outline-dark btn-sm">✏️</a>
-                                        {% if obj.stav == 'nova' %}
-                                        <a href="/operator/zakazka/{{ obj.pk }}/" 
-                                           class="btn btn-success btn-sm">▶️ Začať</a>
+                                                     {% if perms.core.change_objednavka %}
+                                                          <a href="/admin/core/objednavka/{{ obj.pk }}/change/" 
+                                                              class="btn btn-outline-dark btn-sm">✏️</a>
                                         {% endif %}
                                     </div>
                                 </td>
@@ -308,14 +314,18 @@
             </div>
             
             <div class="card-footer bg-light d-flex gap-2">
-                <a href="{% url 'vytvor_davku_z_kontraktu' kontrakt_pk=kontrakt.pk %}" 
-                   class="btn btn-success flex-grow-1">
-                    ➕ Vytvoriť dávku
-                </a>
-                <a href="/admin/core/kontrakt/{{ kontrakt.pk }}/change/" 
-                   class="btn btn-outline-primary">
-                    ✏️
-                </a>
+                {% if perms.core.add_vyrobnadavka %}
+                    <a href="{% url 'vytvor_davku_z_kontraktu' kontrakt_pk=kontrakt.pk %}" 
+                       class="btn btn-success flex-grow-1">
+                        ➕ Vytvoriť dávku
+                    </a>
+                {% endif %}
+                {% if perms.core.change_kontrakt %}
+                    <a href="/admin/core/kontrakt/{{ kontrakt.pk }}/change/" 
+                       class="btn btn-outline-primary">
+                        ✏️
+                    </a>
+                {% endif %}
             </div>
         </div>
         {% empty %}
@@ -402,14 +412,10 @@
                 <a href="{% url 'detail_zakazky' pk=obj.pk %}" class="btn btn-info flex-grow-1">
                     👁️ Detail
                 </a>
-                {% if obj.stav == 'nova' %}
-                <a href="/operator/zakazka/{{ obj.pk }}/" class="btn btn-success">
-                    ▶️ Začať
-                </a>
-                {% else %}
-                <a href="/admin/core/objednavka/{{ obj.pk }}/change/" class="btn btn-outline-secondary">
-                    ✏️
-                </a>
+                {% if perms.core.change_objednavka %}
+                    <a href="/admin/core/objednavka/{{ obj.pk }}/change/" class="btn btn-outline-secondary">
+                        ✏️
+                    </a>
                 {% endif %}
             </div>
         </div>

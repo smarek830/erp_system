@@ -4,6 +4,7 @@
 <div class="container mt-4">
     <h1>🛠️ Môj Dashboard</h1>
     <p>Prihlásený: <strong>{{ user.username }}</strong></p>
+    <div class="alert alert-info">🔄 Template verzia: 2024-02-22-NOVA</div>
 
     <h2>📦 Moje rozpracované zakázky</h2>
     {% if rozpracovane %}
@@ -19,10 +20,10 @@
         <p class="text-muted">Žiadne rozpracované zakázky</p>
     {% endif %}
 
-    <h2>🆕 Nové zakázky</h2>
-    {% if nove %}
-        <div class="list-group">
-            {% for obj in nove %}
+    <h2>🆕 Priradené zakázky</h2>
+    {% if nove_priradene %}
+        <div class="list-group mb-4">
+            {% for obj in nove_priradene %}
             <a href="{% url 'operator_zakazka_detail' obj.pk %}" class="list-group-item list-group-item-action">
                 <strong>#{{ obj.cislo_objednavky }}</strong> - {{ obj.produkt.nazov }} ({{ obj.mnozstvo }} ks)
                 <small class="text-muted">Termín: {{ obj.datum_pozadovane }}</small>
@@ -30,7 +31,70 @@
             {% endfor %}
         </div>
     {% else %}
-        <p class="text-muted">Žiadne nové zakázky</p>
+        <p class="text-muted">Žiadne priradené zakázky</p>
+    {% endif %}
+
+    <h2>📋 Dostupné nové zakázky</h2>
+    {% if nove_dostupne %}
+        <div class="list-group mb-4">
+            {% for obj in nove_dostupne %}
+            <div class="list-group-item">
+                <div class="d-flex justify-content-between align-items-center">
+                    <div>
+                        <strong>#{{ obj.cislo_objednavky }}</strong> - {{ obj.produkt.nazov }} ({{ obj.mnozstvo }} ks)
+                        <small class="text-muted">Termín: {{ obj.datum_pozadovane }}</small>
+                    </div>
+                    <button class="btn btn-success btn-sm" onclick="prevziatZakazku({{ obj.pk }})">
+                        📥 Prevziať zakázku
+                    </button>
+                </div>
+            </div>
+            {% endfor %}
+        </div>
+    {% else %}
+        <p class="text-muted">Žiadne dostupné nové zakázky</p>
     {% endif %}
 </div>
+
+<script>
+function getCookie(name) {
+    let cookieValue = null;
+    if (document.cookie && document.cookie !== '') {
+        const cookies = document.cookie.split(';');
+        for (let i = 0; i < cookies.length; i++) {
+            const cookie = cookies[i].trim();
+            if (cookie.substring(0, name.length + 1) === (name + '=')) {
+                cookieValue = decodeURIComponent(cookie.substring(name.length + 1));
+                break;
+            }
+        }
+    }
+    return cookieValue;
+}
+
+function prevziatZakazku(objednavkaId) {
+    if (confirm('Naozaj chcete prevziať túto zakázku?')) {
+        fetch(`/operator/prevziat-zakazku/${objednavkaId}/`, {
+            method: 'POST',
+            headers: {
+                'Content-Type': 'application/json',
+                'X-CSRFToken': getCookie('csrftoken')
+            }
+        })
+        .then(response => response.json())
+        .then(data => {
+            if (data.status === 'ok') {
+                alert(data.message);
+                location.reload();
+            } else {
+                alert('Chyba: ' + data.message);
+            }
+        })
+        .catch(error => {
+            console.error('Error:', error);
+            alert('Došlo k chybe pri prevzatí zakázky');
+        });
+    }
+}
+</script>
 {% endblock %}

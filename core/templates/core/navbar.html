@@ -58,7 +58,7 @@
           <ul class="dropdown-menu dropdown-menu-end">
             <li><a class="dropdown-item" href="/admin/password_change/">🔑 Zmeniť heslo</a></li>
             <li><hr class="dropdown-divider"></li>
-            <li><a class="dropdown-item" href="/admin/logout/">🚪 Odhlásiť</a></li>
+            <li><a class="dropdown-item" href="{% url 'logout_quick' %}">🚪 Odhlásiť</a></li>
           </ul>
         </li>
         {% else %}

@@ -1,0 +1,279 @@
+<!DOCTYPE html>
+<html lang="sk">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>ERP Systém - Kovovýroba</title>
+
+    <!-- Bootstrap CSS -->
+    <link href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.0/dist/css/bootstrap.min.css" rel="stylesheet">
+    <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/bootstrap-icons@1.10.0/font/bootstrap-icons.css">
+
+    <style>
+        body {
+            font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
+            background-color: #f8f9fa;
+        }
+        .navbar {
+            box-shadow: 0 2px 4px rgba(0,0,0,.1);
+        }
+        /* HLAVNÝ KONTajner – okraje a max šírka */
+        .app-container {
+            max-width: 1200px;
+            margin: 20px auto;       /* hore/dole 20px, vľavo/vpravo center */
+            padding: 0 16px;         /* vnútorný odstup od kraja */
+        }
+        .version-badge {
+            font-size: 0.8rem;
+            color: #e9ecef;
+            margin-left: 10px;
+        }
+    </style>
+
+    
+</head>
+<body>
+    <nav class="navbar navbar-expand-lg navbar-dark bg-primary">
+  <div class="container-fluid">
+    <a class="navbar-brand fw-bold" href="/">🏭 ERP Systém</a>
+
+    <button class="navbar-toggler" type="button" data-bs-toggle="collapse" data-bs-target="#navbarNav">
+      <span class="navbar-toggler-icon"></span>
+    </button>
+
+    <div class="collapse navbar-collapse" id="navbarNav">
+      <ul class="navbar-nav me-auto">
+        <li class="nav-item">
+          <a class="nav-link" href="/">🏠 Dashboard</a>
+        </li>
+        <li class="nav-item">
+          <a class="nav-link" href="/plan/">🏭 Plán výroby</a>
+        </li>
+
+        <!-- Sklad -->
+        <li class="nav-item dropdown">
+          <a class="nav-link dropdown-toggle" href="#" role="button" data-bs-toggle="dropdown">
+            📦 Sklad
+          </a>
+          <ul class="dropdown-menu">
+            <li><a class="dropdown-item" href="/sklad/">📦 Hotové diely</a></li>
+            <li><a class="dropdown-item" href="/sklad/material/">🏭 Materiál</a></li>
+            <li><hr class="dropdown-divider"></li>
+            <li><a class="dropdown-item" href="/admin/core/prijemkahotovychdielov/">📥 Príjemky</a></li>
+            <li><a class="dropdown-item" href="/admin/core/vydajkahotovychdielov/">📤 Výdajky</a></li>
+          </ul>
+        </li>
+
+        <li class="nav-item">
+          <a class="nav-link" href="/produkty/">📋 Produkty</a>
+        </li>
+        <li class="nav-item">
+          <a class="nav-link" href="/stroje/">⚙️ Stroje</a>
+        </li>
+
+        <!-- Administrácia -->
+        <li class="nav-item dropdown">
+          <a class="nav-link dropdown-toggle" href="#" role="button" data-bs-toggle="dropdown">
+            ⚙️ Administrácia
+          </a>
+          <ul class="dropdown-menu">
+            <li><a class="dropdown-item" href="/admin/">🔧 Admin panel</a></li>
+            <li><a class="dropdown-item" href="/operator/">👷 Operátorský panel</a></li>
+          </ul>
+        </li>
+      </ul>
+
+      <!-- Pravá strana - user -->
+      <ul class="navbar-nav">
+        
+        <li class="nav-item dropdown">
+          <a class="nav-link dropdown-toggle" href="#" role="button" data-bs-toggle="dropdown">
+            👤 test_operator
+          </a>
+          <ul class="dropdown-menu dropdown-menu-end">
+            <li><a class="dropdown-item" href="/admin/password_change/">🔑 Zmeniť heslo</a></li>
+            <li><hr class="dropdown-divider"></li>
+            <li><a class="dropdown-item" href="/admin/logout/">🚪 Odhlásiť</a></li>
+          </ul>
+        </li>
+        
+      </ul>
+    </div>
+  </div>
+</nav>
+
+
+    <!-- Hlavný obsah so spoločnými okrajmi -->
+    <main class="app-container">
+        <!-- horná lišta: názov + verzia -->
+        <div class="d-flex justify-content-between align-items-center mb-3">
+            <h1 class="h4 mb-0">
+                
+            </h1>
+            <span class="version-badge">Verzia: </span>
+        </div>
+
+        
+<div class="container mt-4">
+    <h1>🛠️ Môj Dashboard</h1>
+    <p>Prihlásený: <strong>test_operator</strong></p>
+    <div class="alert alert-info">🔄 Template verzia: 2024-02-22-NOVA</div>
+
+    <h2>📦 Moje rozpracované zakázky</h2>
+    
+        <p class="text-muted">Žiadne rozpracované zakázky</p>
+    
+
+    <h2>🆕 Priradené zakázky</h2>
+    
+        <p class="text-muted">Žiadne priradené zakázky</p>
+    
+
+    <h2>📋 Dostupné nové zakázky</h2>
+    
+        <div class="list-group mb-4">
+            
+            <div class="list-group-item">
+                <div class="d-flex justify-content-between align-items-center">
+                    <div>
+                        <strong>#</strong> - Testovací produkt (10 ks)
+                        <small class="text-muted">Termín: Feb. 22, 2026</small>
+                    </div>
+                    <button class="btn btn-success btn-sm" onclick="prevziatZakazku(28)">
+                        📥 Prevziať zakázku
+                    </button>
+                </div>
+            </div>
+            
+            <div class="list-group-item">
+                <div class="d-flex justify-content-between align-items-center">
+                    <div>
+                        <strong>#5</strong> - Ritzel Z18 m=0,8 (10 ks)
+                        <small class="text-muted">Termín: Feb. 28, 2026</small>
+                    </div>
+                    <button class="btn btn-success btn-sm" onclick="prevziatZakazku(24)">
+                        📥 Prevziať zakázku
+                    </button>
+                </div>
+            </div>
+            
+            <div class="list-group-item">
+                <div class="d-flex justify-content-between align-items-center">
+                    <div>
+                        <strong>#5501-D002</strong> - Ritzel Z18 m=0,8 (900 ks)
+                        <small class="text-muted">Termín: Feb. 28, 2026</small>
+                    </div>
+                    <button class="btn btn-success btn-sm" onclick="prevziatZakazku(26)">
+                        📥 Prevziať zakázku
+                    </button>
+                </div>
+            </div>
+            
+            <div class="list-group-item">
+                <div class="d-flex justify-content-between align-items-center">
+                    <div>
+                        <strong>#22</strong> - Ritzel Z18 m=0,8 (3 ks)
+                        <small class="text-muted">Termín: March 1, 2026</small>
+                    </div>
+                    <button class="btn btn-success btn-sm" onclick="prevziatZakazku(27)">
+                        📥 Prevziať zakázku
+                    </button>
+                </div>
+            </div>
+            
+            <div class="list-group-item">
+                <div class="d-flex justify-content-between align-items-center">
+                    <div>
+                        <strong>#1</strong> - Ritzel Z18 m=0,8 (50 ks)
+                        <small class="text-muted">Termín: March 8, 2026</small>
+                    </div>
+                    <button class="btn btn-success btn-sm" onclick="prevziatZakazku(21)">
+                        📥 Prevziať zakázku
+                    </button>
+                </div>
+            </div>
+            
+            <div class="list-group-item">
+                <div class="d-flex justify-content-between align-items-center">
+                    <div>
+                        <strong>#88</strong> - Ritzel Z18 m=0,8 (60 ks)
+                        <small class="text-muted">Termín: March 8, 2026</small>
+                    </div>
+                    <button class="btn btn-success btn-sm" onclick="prevziatZakazku(25)">
+                        📥 Prevziať zakázku
+                    </button>
+                </div>
+            </div>
+            
+            <div class="list-group-item">
+                <div class="d-flex justify-content-between align-items-center">
+                    <div>
+                        <strong>#24</strong> - Testovací produkt (20 ks)
+                        <small class="text-muted">Termín: March 8, 2026</small>
+                    </div>
+                    <button class="btn btn-success btn-sm" onclick="prevziatZakazku(29)">
+                        📥 Prevziať zakázku
+                    </button>
+                </div>
+            </div>
+            
+        </div>
+    
+</div>
+
+<script>
+function getCookie(name) {
+    let cookieValue = null;
+    if (document.cookie && document.cookie !== '') {
+        const cookies = document.cookie.split(';');
+        for (let i = 0; i < cookies.length; i++) {
+            const cookie = cookies[i].trim();
+            if (cookie.substring(0, name.length + 1) === (name + '=')) {
+                cookieValue = decodeURIComponent(cookie.substring(name.length + 1));
+                break;
+            }
+        }
+    }
+    return cookieValue;
+}
+
+function prevziatZakazku(objednavkaId) {
+    if (confirm('Naozaj chcete prevziať túto zakázku?')) {
+        fetch(`/operator/prevziat-zakazku/${objednavkaId}/`, {
+            method: 'POST',
+            headers: {
+                'Content-Type': 'application/json',
+                'X-CSRFToken': getCookie('csrftoken')
+            }
+        })
+        .then(response => response.json())
+        .then(data => {
+            if (data.status === 'ok') {
+                alert(data.message);
+                location.reload();
+            } else {
+                alert('Chyba: ' + data.message);
+            }
+        })
+        .catch(error => {
+            console.error('Error:', error);
+            alert('Došlo k chybe pri prevzatí zakázky');
+        });
+    }
+}
+</script>
+
+    </main>
+
+    <!-- Footer -->
+    <footer class="bg-light text-center py-3 mt-4">
+        <div class="container">
+            <small class="text-muted">© 2026 ERP Systém - Kovovýroba</small>
+        </div>
+    </footer>
+
+    <!-- Bootstrap JS -->
+    <script src="https://cdn.jsdelivr.net/npm/bootstrap@5.3.0/dist/js/bootstrap.bundle.min.js"></script>
+    
+</body>
+</html>

@@ -7,6 +7,7 @@ The repository is a small Django monolith focused on production orders and an op
   - Backend views / URL patterns: `core/views.py` and `core/urls.py` (operator AJAX endpoints live here).
   - Templates: `core/templates/core/` (operator UI in `operator/zakazka_detail.html` shows client-side patterns).
   - Models & migrations: `core/models.py` and `core/migrations/` (data model is centralized here).
+  - Domain layer: `core/domain.py` (business logic aliases like `Job`, `StockMovement` for cleaner code).
 
 - Important runtime commands (project-specific):
   - Run dev server: `python manage.py runserver`

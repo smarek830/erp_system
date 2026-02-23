@@ -19,7 +19,7 @@ class ObjednavkaForm(forms.ModelForm):
         widgets = {
             'cislo_objednavky': forms.TextInput(attrs={
                 'class': 'form-control',
-                'placeholder': 'napr. OBJ-2026-001'
+                'placeholder': 'nechajte prázdne pre auto'
             }),
             'zakaznik': forms.TextInput(attrs={
                 'class': 'form-control',
@@ -44,13 +44,17 @@ class ObjednavkaForm(forms.ModelForm):
             }),
         }
         labels = {
-            'cislo_objednavky': 'Číslo objednávky *',
+            'cislo_objednavky': 'Číslo objednávky',
             'zakaznik': 'Zákazník *',
             'produkt': 'Produkt *',
             'mnozstvo': 'Množstvo (ks) *',
             'datum_pozadovane': 'Požadovaný termín dodania *',
             'poznamka': 'Poznámka',
         }
+
+    def __init__(self, *args, **kwargs):
+        super().__init__(*args, **kwargs)
+        self.fields['cislo_objednavky'].required = False
 
     def clean_mnozstvo(self):
         mnozstvo = self.cleaned_data.get('mnozstvo')
@@ -82,7 +86,7 @@ class KontraktForm(forms.ModelForm):
         widgets = {
             'cislo_kontraktu': forms.TextInput(attrs={
                 'class': 'form-control',
-                'placeholder': 'napr. KONTR-2026-001'
+                'placeholder': 'nechajte prázdne pre auto'
             }),
             'zakaznik': forms.TextInput(attrs={
                 'class': 'form-control',
@@ -109,7 +113,7 @@ class KontraktForm(forms.ModelForm):
             }),
         }
         labels = {
-            'cislo_kontraktu': 'Číslo kontraktu *',
+            'cislo_kontraktu': 'Číslo kontraktu',
             'zakaznik': 'Zákazník *',
             'produkt': 'Produkt *',
             'pocet_kusov_celkovo': 'Celkový počet kusov *',
@@ -117,6 +121,10 @@ class KontraktForm(forms.ModelForm):
             'datum_do': 'Platnosť do *',
             'je_skladom': 'Tovar bude skladom?',
         }
+
+    def __init__(self, *args, **kwargs):
+        super().__init__(*args, **kwargs)
+        self.fields['cislo_kontraktu'].required = False
 
     def clean(self):
         cleaned_data = super().clean()

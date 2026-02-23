@@ -11,6 +11,7 @@ https://docs.djangoproject.com/en/5.2/ref/settings/
 """
 
 from pathlib import Path
+from datetime import datetime
 
 # Build paths inside the project like this: BASE_DIR / 'subdir'.
 BASE_DIR = Path(__file__).resolve().parent.parent
@@ -62,6 +63,7 @@ TEMPLATES = [
                 'django.template.context_processors.request',
                 'django.contrib.auth.context_processors.auth',
                 'django.contrib.messages.context_processors.messages',
+                'core.context_processors.app_meta',
             ],
         },
     },
@@ -133,3 +135,4 @@ LOGIN_REDIRECT_URL = '/' # Alebo kam chceš po prihlásení
 LOGOUT_REDIRECT_URL = '/accounts/login/'
 
 APP_VERSION = "0.1.0"
+APP_BUILD_TS = datetime.now().strftime("%d.%m.%Y %H:%M:%S")

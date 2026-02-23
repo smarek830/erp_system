@@ -5,40 +5,45 @@
 
 {% block content %}
 <div class="container py-4">
-  
+
   <div class="d-flex justify-content-between align-items-center mb-3">
     <a href="{% url 'plan_vyroby' %}" class="btn btn-outline-secondary btn-sm">
       ⬅ Späť na plán
     </a>
-    
+
     {% if zakazka.stav == 'nova' %}
       <span class="badge bg-primary fs-6">🆕 Nová</span>
     {% elif zakazka.stav == 'vyroba' %}
       <span class="badge bg-warning text-dark fs-6">⚙️ Vo výrobe</span>
     {% elif zakazka.stav == 'pozastavene' %}
       <span class="badge bg-secondary fs-6">⏸️ Pozastavené</span>
-    {% elif zakazka.stav == 'hotove' %}
+    {% elif zakazka.stav == 'hotovo' %}
       <span class="badge bg-success fs-6">✅ Hotové</span>
     {% endif %}
   </div>
 
-  <h2 class="h4 mb-4">Zakázka #{{ zakazka.cislo_objednavky }}</h2>
+  <div class="alert alert-info mb-4">
+    👩‍💼 Manažérsky prehľad (iba na čítanie). Operátorské akcie a úpravy sú vypnuté.
+  </div>
 
-  <!-- Základné info -->
+  <h2 class="h4 mb-3">Zakázka #{{ zakazka.cislo_objednavky }}</h2>
+
+  <!-- Základné info o zakázke -->
   <div class="card mb-4">
     <div class="card-body">
-      <div class="row">
+      <div class="row g-3">
         <div class="col-md-3">
           <small class="text-muted">Zákazník:</small>
-          <div class="fw-semibold">{{ zakazka.zakaznik.nazov }}</div>
+          <div class="fw-semibold">{{ zakazka.zakaznik }}</div>
         </div>
         <div class="col-md-3">
           <small class="text-muted">Produkt:</small>
           <div class="fw-semibold">{{ zakazka.produkt.nazov }}</div>
+          <div><small class="text-muted">{{ zakazka.produkt.cislo_dielu }}</small></div>
         </div>
         <div class="col-md-3">
-          <small class="text-muted">Množstvo:</small>
-          <div class="fw-semibold">{{ zakazka.mnozstvo }} ks</div>
+          <small class="text-muted">Dátum zadania:</small>
+          <div class="fw-semibold">{{ zakazka.datum_zadania|date:"d.m.Y" }}</div>
         </div>
         <div class="col-md-3">
           <small class="text-muted">Termín:</small>
@@ -49,20 +54,55 @@
             {{ zakazka.datum_pozadovane|date:"d.m.Y" }}
           </div>
         </div>
+        {% if zakazka.poznamka %}
+        <div class="col-12">
+          <small class="text-muted">Poznámka:</small>
+          <div class="fw-semibold">{{ zakazka.poznamka }}</div>
+        </div>
+        {% endif %}
       </div>
     </div>
   </div>
 
-  <!-- Výrobné dávky a operácie -->
+  <!-- Výrobný súhrn -->
   <div class="card mb-4">
-    <div class="card-header bg-primary text-white d-flex justify-content-between align-items-center">
-      <h5 class="mb-0">📦 Výrobné dávky</h5>
-      {% if perms.core.add_vyrobnadavka %}
-        <a href="/admin/core/vyrobnadavka/add/?objednavka={{ zakazka.id }}" 
-           class="btn btn-sm btn-light">
-          ➕ Nová dávka
-        </a>
-      {% endif %}
+    <div class="card-header bg-primary text-white">
+      <h5 class="mb-0">📊 Súhrn výroby</h5>
+    </div>
+    <div class="card-body">
+      <div class="row text-center g-3">
+        <div class="col-6 col-md-2">
+          <small class="text-muted d-block">Požadované</small>
+          <div class="h4 mb-0">{{ zakazka.mnozstvo }} ks</div>
+        </div>
+        <div class="col-6 col-md-2">
+          <small class="text-muted d-block">OK kusy</small>
+          <div class="h4 mb-0 text-success">{{ zakazka.celkom_ok_kusy }} ks</div>
+        </div>
+        <div class="col-6 col-md-2">
+          <small class="text-muted d-block">NOK kusy</small>
+          <div class="h4 mb-0 text-danger">{{ zakazka.celkom_nok_kusy }} ks</div>
+        </div>
+        <div class="col-6 col-md-2">
+          <small class="text-muted d-block">Zostáva OK</small>
+          <div class="h4 mb-0 text-warning">{{ zakazka.zostava_vyroba }} ks</div>
+        </div>
+        <div class="col-6 col-md-2">
+          <small class="text-muted d-block">Celkovo vyrobiť</small>
+          <div class="h4 mb-0 text-info">{{ zakazka.potrebne_kusy_celkom }} ks</div>
+        </div>
+        <div class="col-6 col-md-2">
+          <small class="text-muted d-block">Stav</small>
+          <div class="h5 mb-0">{{ zakazka.get_stav_display }}</div>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <!-- Výrobná dávka -->
+  <div class="card mb-4">
+    <div class="card-header bg-secondary text-white">
+      <h5 class="mb-0">📦 Výrobná dávka</h5>
     </div>
     <div class="card-body">
       {% if vyrobne_davky %}
@@ -70,119 +110,94 @@
         <div class="border rounded p-3 mb-3">
           <div class="d-flex justify-content-between align-items-center mb-2">
             <h6 class="mb-0">
-              Dávka #{{ davka.id }} - {{ davka.mnozstvo }} ks
+              Dávka #{{ davka.id }} - {{ davka.mnozstvo_davky }} ks
             </h6>
             <span class="badge 
-              {% if davka.stav == 'nova' %}bg-info
-              {% elif davka.stav == 'vyroba' %}bg-warning text-dark
+              {% if davka.stav == 'planovana' %}bg-info
+              {% elif davka.stav == 'vo_vyrobe' %}bg-warning text-dark
               {% elif davka.stav == 'hotova' %}bg-success
+              {% elif davka.stav == 'expedovana' %}bg-primary
               {% else %}bg-secondary{% endif %}">
               {{ davka.get_stav_display }}
             </span>
           </div>
-
-          <!-- Operácie v dávke -->
-          {% if davka.operacie.all %}
-          <div class="table-responsive mt-3">
-            <table class="table table-sm table-hover mb-0">
-              <thead class="table-light">
-                <tr>
-                  <th>Por.</th>
-                  <th>Operácia</th>
-                  <th>Stroj</th>
-                  <th>Operátor</th>
-                  <th>Stav</th>
-                  <th>Čas (min)</th>
-                </tr>
-              </thead>
-              <tbody>
-                {% for operacia in davka.operacie.all %}
-                <tr>
-                  <td>{{ operacia.poradie }}</td>
-                  <td>{{ operacia.nazov_operacie }}</td>
-                  <td>
-                    {% if operacia.stroj %}
-                      {{ operacia.stroj.nazov }}
-                    {% else %}
-                      <span class="text-muted">-</span>
-                    {% endif %}
-                  </td>
-                  <td>
-                    {% if operacia.operator %}
-                      {{ operacia.operator.username }}
-                    {% else %}
-                      <span class="text-muted">Nepriradené</span>
-                    {% endif %}
-                  </td>
-                  <td>
-                    {% if operacia.stav == 'caka' %}
-                      <span class="badge bg-secondary">Čaká</span>
-                    {% elif operacia.stav == 'vyroba' %}
-                      <span class="badge bg-warning text-dark">⚙️ V práci</span>
-                    {% elif operacia.stav == 'hotova' %}
-                      <span class="badge bg-success">✅ Hotová</span>
-                    {% endif %}
-                  </td>
-                  <td>
-                    {% if operacia.cas_realny %}
-                      {{ operacia.cas_realny }} min
-                    {% else %}
-                      <span class="text-muted">-</span>
-                    {% endif %}
-                  </td>
-                </tr>
-                {% endfor %}
-              </tbody>
-            </table>
-          </div>
-          {% else %}
-            <div class="text-muted small mt-2">
-              Žiadne operácie v tejto dávke.
-            </div>
-          {% endif %}
+          <small class="text-muted">Dátum vytvorenia: {{ davka.datum_vytvorenia|date:"d.m.Y" }}</small>
         </div>
         {% endfor %}
       {% else %}
         <div class="alert alert-info mb-0">
-          <i class="bi bi-info-circle"></i>
           Pre túto zakázku ešte neboli vytvorené žiadne výrobné dávky.
-          {% if perms.core.add_vyrobnadavka %}
-            <a href="/admin/core/vyrobnadavka/add/?objednavka={{ zakazka.id }}" 
-               class="alert-link">Vytvoriť prvú dávku</a>
-          {% endif %}
         </div>
       {% endif %}
     </div>
   </div>
 
-  <!-- História meraní -->
-  {% if merania %}
-  <div class="card">
-    <div class="card-header bg-secondary text-white d-flex justify-content-between align-items-center">
-      <h5 class="mb-0">📋 História meraní</h5>
-      {% if perms.core.add_meranie %}
-        <a href="/admin/core/objednavka/{{ zakazka.id }}/change/" 
-           class="btn btn-sm btn-light">
-          ➕ Pridať meranie
-        </a>
-      {% endif %}
+  <!-- Operácie -->
+  <div class="card mb-4">
+    <div class="card-header bg-dark text-white">
+      <h5 class="mb-0">🧾 Operácie výroby (read-only)</h5>
     </div>
     <div class="card-body">
-      {% for meranie in merania %}
-      <div class="border-bottom pb-3 mb-3">
-        <h6>🔧 {{ meranie.typ|default:"OPRAVA" }}</h6>
-        <p class="mb-2">{{ meranie.poznamka|default:"Bez poznámky" }}</p>
-        {% if meranie.fotka %}
-          <img src="{{ meranie.fotka.url }}" alt="Fotka merania" class="img-fluid" style="max-width: 400px;">
-        {% endif %}
-        <small class="text-muted d-block mt-2">
-          {{ meranie.datum_merania|date:"d.m.Y H:i" }}
-        </small>
+      {% if operacie %}
+      <div class="table-responsive">
+        <table class="table table-sm table-hover align-middle mb-0">
+          <thead class="table-light">
+            <tr>
+              <th>Por.</th>
+              <th>Operácia</th>
+              <th>Stroj</th>
+              <th>Operátor</th>
+              <th class="text-center">OK</th>
+              <th class="text-center">NOK</th>
+              <th class="text-center">Stav</th>
+              <th class="text-center">Čas (min)</th>
+            </tr>
+          </thead>
+          <tbody>
+            {% for operacia in operacie %}
+            <tr>
+              <td>{{ operacia.poradie }}</td>
+              <td>{{ operacia.nazov_operacie }}</td>
+              <td>{{ operacia.stroj.nazov }}</td>
+              <td>{% if operacia.operator %}{{ operacia.operator.username }}{% else %}<span class="text-muted">Nepriradené</span>{% endif %}</td>
+              <td class="text-center"><span class="badge bg-success">{{ operacia.vyrobene_kusy }}</span></td>
+              <td class="text-center"><span class="badge bg-danger">{{ operacia.nepodarky }}</span></td>
+              <td class="text-center">
+                {% if operacia.stav == 'caka' %}
+                  <span class="badge bg-secondary">Čaká</span>
+                {% elif operacia.stav == 'vyroba' %}
+                  <span class="badge bg-warning text-dark">V práci</span>
+                {% elif operacia.stav == 'pozastavena' %}
+                  <span class="badge bg-secondary">Pozastavená</span>
+                {% elif operacia.stav == 'hotova' %}
+                  <span class="badge bg-success">Hotová</span>
+                {% endif %}
+              </td>
+              <td class="text-center">{% if operacia.cas_realny %}{{ operacia.cas_realny }}{% else %}<span class="text-muted">-</span>{% endif %}</td>
+            </tr>
+            {% endfor %}
+          </tbody>
+        </table>
       </div>
-      {% endfor %}
+      {% else %}
+      <div class="alert alert-warning mb-0">Pre túto zakázku zatiaľ nie sú vytvorené operácie.</div>
+      {% endif %}
     </div>
   </div>
-  {% endif %}
+
+  <div class="card">
+    <div class="card-header bg-light">
+      <h5 class="mb-0">⚙️ Administrácia</h5>
+    </div>
+    <div class="card-body d-flex flex-wrap gap-2">
+      {% if perms.core.change_objednavka %}
+        <a href="/admin/core/objednavka/{{ zakazka.pk }}/history/" class="btn btn-outline-secondary btn-sm">📜 História zmien</a>
+        <a href="/admin/core/operaciavyroby/?objednavka__id__exact={{ zakazka.pk }}" class="btn btn-outline-secondary btn-sm">🧾 Operácie v admin</a>
+      {% else %}
+        <span class="text-muted small">Prístup iba na čítanie.</span>
+      {% endif %}
+    </div>
+  </div>
 
 </div>
 {% endblock %}
