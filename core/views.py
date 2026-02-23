@@ -32,7 +32,7 @@ def offline_page(request):
 
 
 def service_worker(request):
-        content = """const CACHE_NAME = 'erp-pwa-v1';
+    content = """const CACHE_NAME = 'erp-pwa-v1';
 const OFFLINE_URL = '/offline/';
 const PRECACHE_URLS = [
     OFFLINE_URL,
