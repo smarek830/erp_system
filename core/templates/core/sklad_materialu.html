@@ -66,9 +66,15 @@
                             <th>Názov materiálu</th>
                             <th>Kód</th>
                             <th>Typ</th>
+                            <th class="text-center">Priemer (mm)</th>
+                            <th class="text-center">Tyč (m)</th>
+                            <th class="text-center">kg/m</th>
                             <th class="text-center">Aktuálna zásoba</th>
                             <th class="text-center">Minimálna zásoba</th>
                             <th class="text-center">Jednotka</th>
+                            <th class="text-center">Potreba (otvorené)</th>
+                            <th class="text-center">Tyče</th>
+                            <th class="text-center">Nedostatok</th>
                             <th class="text-center">Stav</th>
                             <th class="text-end">Akcia</th>
                         </tr>
@@ -81,6 +87,9 @@
                             <td>
                                 <span class="badge bg-secondary">{{ material.get_typ_display }}</span>
                             </td>
+                            <td class="text-center">{{ material.priemer_mm }}</td>
+                            <td class="text-center">{{ material.tyc_dlzka_m }}</td>
+                            <td class="text-center">{{ material.kg_na_meter }}</td>
                             <td class="text-center">
                                 <span class="badge {% if material.aktualna_zasoba < material.minimalna_zasoba %}bg-danger{% else %}bg-success{% endif %} fs-6">
                                     {{ material.aktualna_zasoba }}
@@ -88,6 +97,27 @@
                             </td>
                             <td class="text-center text-muted">{{ material.minimalna_zasoba }}</td>
                             <td class="text-center">{{ material.jednotka }}</td>
+                            <td class="text-center">
+                                {% if material.potreba_kg %}
+                                    {{ material.potreba_kg }} kg
+                                {% else %}
+                                    <span class="text-muted">-</span>
+                                {% endif %}
+                            </td>
+                            <td class="text-center">
+                                {% if material.potreba_tyce %}
+                                    {{ material.potreba_tyce }}
+                                {% else %}
+                                    <span class="text-muted">-</span>
+                                {% endif %}
+                            </td>
+                            <td class="text-center">
+                                {% if material.nedostatok_kg %}
+                                    <span class="badge bg-danger">{{ material.nedostatok_kg }} kg</span>
+                                {% else %}
+                                    <span class="badge bg-success">OK</span>
+                                {% endif %}
+                            </td>
                             <td class="text-center">
                                 {% if material.aktualna_zasoba < material.minimalna_zasoba %}
                                     <span class="badge bg-danger">⚠️ Pod minimom</span>

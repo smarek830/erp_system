@@ -234,9 +234,27 @@ def home(request):
 @permission_required("core.view_stroj", raise_exception=True)
 def zoznam_strojov(request):
     stroje = Stroj.objects.all().order_by("nazov")
+    from .models import OperaciaVyroby
 
     for s in stroje:
-        s.vytazenost = s.vytazenost_poslednych_7_dni()
+        operacie = OperaciaVyroby.objects.filter(
+            stroj=s,
+            stav__in=['caka', 'vyroba', 'pozastavena'],
+            objednavka__stav__in=['nova', 'vyroba', 'pozastavene']
+        )
+
+        rezervacia_min = 0.0
+        for op in operacie:
+            zostava = op.get_dostupne_kusy_na_vstupe()
+            if zostava <= 0:
+                continue
+            cas_pripravy = 0
+            if op.stav == 'caka' and op.vyrobene_kusy == 0 and op.nepodarky == 0:
+                cas_pripravy = op.cas_pripravy
+            rezervacia_min += (float(op.cas_kus) * zostava) + cas_pripravy
+
+        s.rezervacia_hodin = round(rezervacia_min / 60, 1)
+        s.rezervacia_percent = int(min(100, round((s.rezervacia_hodin / 168) * 100)))
         
         # Pridaj absolútnu hodnotu dní do servisu
         if s.dni_do_servisu is not None and s.dni_do_servisu < 0:
@@ -748,7 +766,40 @@ def sklad_hotovych_dielov(request):
 @permission_required("core.view_material", raise_exception=True)
 def sklad_materialu(request):
     """Dashboard skladu materiálu"""
+    from math import ceil
     materialy = Material.objects.all().order_by('nazov')
+    otvorene_zakazky = Objednavka.objects.exclude(stav='hotovo').select_related('produkt', 'produkt__material_ref')
+
+    potreby = {}
+    for zakazka in otvorene_zakazky:
+        produkt = zakazka.produkt
+        material = produkt.material_ref
+        if not material:
+            continue
+        if not produkt.dlzka_na_kus_mm or produkt.dlzka_na_kus_mm <= 0:
+            continue
+        if not material.kg_na_meter or material.kg_na_meter <= 0:
+            continue
+
+        dlzka_m = (float(produkt.dlzka_na_kus_mm) * zakazka.mnozstvo) / 1000
+        kg = dlzka_m * float(material.kg_na_meter)
+        tyc_dlzka_m = float(material.tyc_dlzka_m or 0)
+        tyce = ceil(dlzka_m / tyc_dlzka_m) if tyc_dlzka_m > 0 else 0
+
+        data = potreby.setdefault(material.id, {'m': 0.0, 'kg': 0.0, 'tyce': 0})
+        data['m'] += dlzka_m
+        data['kg'] += kg
+        data['tyce'] += tyce
+
+    for material in materialy:
+        data = potreby.get(material.id, {'m': 0.0, 'kg': 0.0, 'tyce': 0})
+        material.potreba_m = round(data['m'], 2)
+        material.potreba_kg = round(data['kg'], 2)
+        material.potreba_tyce = data['tyce']
+        if material.jednotka.lower() == 'kg':
+            material.nedostatok_kg = round(max(0.0, material.potreba_kg - float(material.aktualna_zasoba)), 2)
+        else:
+            material.nedostatok_kg = None
     
     # Štatistiky
     celkom = materialy.count()
@@ -779,6 +830,8 @@ def nova_objednavka(request):
     """Vytvorenie novej objednávky cez webový formulár"""
     from .forms import ObjednavkaForm
     from django.contrib import messages
+    from .models import SkladHotovychDielov
+    from .models import Produkt
     
     if request.method == 'POST':
         form = ObjednavkaForm(request.POST)
@@ -793,10 +846,33 @@ def nova_objednavka(request):
     else:
         form = ObjednavkaForm()
     
+    sklad_map = {
+        sklad.produkt_id: sklad.mnozstvo
+        for sklad in SkladHotovychDielov.objects.all()
+    }
+
+    produkt_material_map = {}
+    for produkt in Produkt.objects.select_related('material_ref'):
+        material = produkt.material_ref
+        if not material:
+            continue
+        produkt_material_map[produkt.id] = {
+            'material_nazov': material.nazov,
+            'material_kod': material.kod,
+            'jednotka': material.jednotka,
+            'zasoba': float(material.aktualna_zasoba),
+            'dlzka_na_kus_mm': float(produkt.dlzka_na_kus_mm or 0),
+            'tyc_dlzka_m': float(material.tyc_dlzka_m or 0),
+            'kg_na_meter': float(material.kg_na_meter or 0),
+            'priemer_mm': float(material.priemer_mm or 0),
+        }
+
     context = {
         'form': form,
         'title': 'Nová objednávka',
         'submit_text': 'Vytvoriť objednávku',
+        'sklad_map': sklad_map,
+        'produkt_material_map': produkt_material_map,
     }
     return render(request, 'core/nova_objednavka.html', context)
 
@@ -831,6 +907,8 @@ def upravit_objednavku(request, pk):
     """Úprava existujúcej objednávky"""
     from .forms import ObjednavkaForm
     from django.contrib import messages
+    from .models import SkladHotovychDielov
+    from .models import Produkt
     
     objednavka = get_object_or_404(Objednavka, pk=pk)
     
@@ -843,11 +921,34 @@ def upravit_objednavku(request, pk):
     else:
         form = ObjednavkaForm(instance=objednavka)
     
+    sklad_map = {
+        sklad.produkt_id: sklad.mnozstvo
+        for sklad in SkladHotovychDielov.objects.all()
+    }
+
+    produkt_material_map = {}
+    for produkt in Produkt.objects.select_related('material_ref'):
+        material = produkt.material_ref
+        if not material:
+            continue
+        produkt_material_map[produkt.id] = {
+            'material_nazov': material.nazov,
+            'material_kod': material.kod,
+            'jednotka': material.jednotka,
+            'zasoba': float(material.aktualna_zasoba),
+            'dlzka_na_kus_mm': float(produkt.dlzka_na_kus_mm or 0),
+            'tyc_dlzka_m': float(material.tyc_dlzka_m or 0),
+            'kg_na_meter': float(material.kg_na_meter or 0),
+            'priemer_mm': float(material.priemer_mm or 0),
+        }
+
     context = {
         'form': form,
         'title': f'Upraviť objednávku #{objednavka.cislo_objednavky}',
         'submit_text': 'Uložiť zmeny',
         'objednavka': objednavka,
+        'sklad_map': sklad_map,
+        'produkt_material_map': produkt_material_map,
     }
     return render(request, 'core/nova_objednavka.html', context)
 

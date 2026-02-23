@@ -58,25 +58,45 @@ class Stroj(models.Model):
         koniec = timezone.now()
         zaciatok = koniec - timedelta(days=7)
         celkovy_interval_hodiny = 7 * 24
+        from django.apps import apps
 
-        zaznamy = VyrobnyZaznam.objects.filter(
-            operacia__stroj=self,
-            cas_zaznamu__gte=zaciatok,
-            cas_zaznamu__lte=koniec,
-        ).order_by("cas_zaznamu")
+        OperatorNaOperacii = apps.get_model('core', 'OperatorNaOperacii')
+        VyrobnyZaznam = apps.get_model('core', 'VyrobnyZaznam')
 
-        posledny_start = None
         odrobene_sekundy = 0
 
-        for z in zaznamy:
-            if z.typ_udalosti == "START":
-                posledny_start = z.cas_zaznamu
-            elif z.typ_udalosti == "STOP" and posledny_start:
-                odrobene_sekundy += (z.cas_zaznamu - posledny_start).total_seconds()
-                posledny_start = None
+        operator_zaznamy = OperatorNaOperacii.objects.filter(
+            operacia__stroj=self,
+            cas_zaciatku__lte=koniec,
+        ).filter(
+            models.Q(cas_konca__isnull=True) | models.Q(cas_konca__gte=zaciatok)
+        )
 
-        if posledny_start:
-            odrobene_sekundy += (koniec - posledny_start).total_seconds()
+        if operator_zaznamy.exists():
+            for zaznam in operator_zaznamy:
+                start = max(zaznam.cas_zaciatku, zaciatok)
+                end = zaznam.cas_konca or koniec
+                end = min(end, koniec)
+                if end > start:
+                    odrobene_sekundy += (end - start).total_seconds()
+        else:
+            zaznamy = VyrobnyZaznam.objects.filter(
+                operacia__stroj=self,
+                cas_zaznamu__gte=zaciatok,
+                cas_zaznamu__lte=koniec,
+            ).order_by("cas_zaznamu")
+
+            posledny_start = None
+
+            for z in zaznamy:
+                if z.typ_udalosti == "START":
+                    posledny_start = z.cas_zaznamu
+                elif z.typ_udalosti == "STOP" and posledny_start:
+                    odrobene_sekundy += (z.cas_zaznamu - posledny_start).total_seconds()
+                    posledny_start = None
+
+            if posledny_start:
+                odrobene_sekundy += (koniec - posledny_start).total_seconds()
 
         odrobene_hodiny = odrobene_sekundy / 3600
         if celkovy_interval_hodiny == 0:
@@ -104,6 +124,19 @@ class Produkt(models.Model):
     rozmer_polotovaru = models.CharField(max_length=100, blank=True, verbose_name="Rozmer polotovaru")
     spotreba_ks = models.DecimalField(max_digits=10, decimal_places=2, default=0, verbose_name="Spotreba na kus")
 
+    material_ref = models.ForeignKey(
+        'Material',
+        on_delete=models.SET_NULL,
+        null=True,
+        blank=True,
+        related_name='produkty',
+        verbose_name="Materiál (sklad)")
+    dlzka_na_kus_mm = models.DecimalField(
+        max_digits=10,
+        decimal_places=2,
+        default=0,
+        verbose_name="Dĺžka na kus (mm)")
+
     cas_vyroby = models.IntegerField(default=0, verbose_name="Čas výroby (min)")
     norma_hod = models.IntegerField(default=0, verbose_name="Norma (ks/hod)")
 
@@ -112,6 +145,13 @@ class Produkt(models.Model):
 
     def __str__(self):
         return f"{self.nazov} (Index: {self.index if self.index else '-'})"
+
+    def kusov_na_tyc(self):
+        if not self.material_ref or not self.material_ref.tyc_dlzka_m or not self.dlzka_na_kus_mm:
+            return None
+        if self.dlzka_na_kus_mm <= 0:
+            return None
+        return int((self.material_ref.tyc_dlzka_m * 1000) // self.dlzka_na_kus_mm)
 
     class Meta:
         verbose_name = "Produkt"
@@ -952,6 +992,10 @@ class Material(models.Model):
     minimalna_zasoba = models.DecimalField(max_digits=10, decimal_places=2, default=0, verbose_name="Minimálna zásoba")
 
     cena_za_jednotku = models.DecimalField(max_digits=10, decimal_places=2, default=0, verbose_name="Cena za jednotku (€)")
+
+    priemer_mm = models.DecimalField(max_digits=10, decimal_places=2, default=0, verbose_name="Priemer (mm)")
+    tyc_dlzka_m = models.DecimalField(max_digits=10, decimal_places=2, default=0, verbose_name="Dĺžka tyče (m)")
+    kg_na_meter = models.DecimalField(max_digits=10, decimal_places=3, default=0, verbose_name="Hmotnosť (kg/m)")
 
     def __str__(self):
         return f"{self.nazov} ({self.kod}) - {self.aktualna_zasoba} {self.jednotka}"

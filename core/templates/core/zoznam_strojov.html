@@ -19,7 +19,7 @@
           <th>Stav</th>
           <th>Posledný servis</th>
           <th>Najbližší servis</th>
-          <th>Vyťaženosť (7 dní)</th>
+          <th>Obsadenosť (7 dní)</th>
           <th>Hodinová sadzba</th>
           <th></th>
         </tr>
@@ -83,14 +83,15 @@
           <td style="min-width: 160px;">
             <div class="progress" style="height: 16px;">
               <div class="progress-bar
-                    {% if stroj.vytazenost < 60 %}bg-success
-                    {% elif stroj.vytazenost < 90 %}bg-warning text-dark
+                    {% if stroj.rezervacia_percent < 60 %}bg-success
+                    {% elif stroj.rezervacia_percent < 90 %}bg-warning text-dark
                     {% else %}bg-danger{% endif %}"
                    role="progressbar"
-                   style="width: {{ stroj.vytazenost }}%;">
-                <span class="small">{{ stroj.vytazenost }}%</span>
+                   style="width: {{ stroj.rezervacia_percent }}%;">
+                <span class="small">{{ stroj.rezervacia_hodin }} h</span>
               </div>
             </div>
+            <small class="text-muted">{{ stroj.rezervacia_percent }}% z 7 dní</small>
           </td>
 
           <!-- Cena za hodinu -->

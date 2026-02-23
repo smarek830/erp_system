@@ -206,6 +206,8 @@ class ProduktForm(forms.ModelForm):
             'material',
             'rozmer_polotovaru',
             'spotreba_ks',
+            'material_ref',
+            'dlzka_na_kus_mm',
             'cas_vyroby',
             'norma_hod',
         ]
@@ -239,6 +241,14 @@ class ProduktForm(forms.ModelForm):
                 'step': '0.01',
                 'min': '0'
             }),
+            'material_ref': forms.Select(attrs={
+                'class': 'form-select'
+            }),
+            'dlzka_na_kus_mm': forms.NumberInput(attrs={
+                'class': 'form-control',
+                'step': '0.01',
+                'min': '0'
+            }),
             'cas_vyroby': forms.NumberInput(attrs={
                 'class': 'form-control',
                 'min': '0'
@@ -256,6 +266,8 @@ class ProduktForm(forms.ModelForm):
             'material': 'Materiál',
             'rozmer_polotovaru': 'Rozmer polotovaru',
             'spotreba_ks': 'Spotreba na kus',
+            'material_ref': 'Materiál (sklad)',
+            'dlzka_na_kus_mm': 'Dĺžka na kus (mm)',
             'cas_vyroby': 'Čas výroby (min)',
             'norma_hod': 'Norma (ks/hod)',
         }

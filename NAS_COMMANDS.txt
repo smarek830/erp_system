@@ -1,0 +1,41 @@
+# Príkazy na spustenie na NASe (SSH terminal)
+# Prihlásenie: ssh Marek@192.168.1.94
+
+# Navigácia do projektu
+cd /volume1/docker/erp
+
+# 1️⃣ Zastavenie starej verzie (ak beh)
+docker-compose down
+
+# 2️⃣ Build nového image
+docker-compose build --no-cache
+
+# 3️⃣ Spustenie nového kontajnera
+docker-compose up -d
+
+# 4️⃣ Čakanie na spustenie aplikácie
+sleep 5
+
+# 5️⃣ Migrácia databázy
+docker-compose exec -T web python manage.py migrate
+
+# 6️⃣ Zbieranie static files
+docker-compose exec -T web python manage.py collectstatic --noinput
+
+# 7️⃣ Checknutie stavu
+docker-compose ps
+
+# 8️⃣ Zobrazenie logov
+docker-compose logs -f
+
+
+# --- Rýchly Deploy (v jednom riadku) ---
+cd /volume1/docker/erp && docker-compose down && docker-compose build --no-cache && docker-compose up -d && sleep 5 && docker-compose exec -T web python manage.py migrate && docker-compose exec -T web python manage.py collectstatic --noinput && docker-compose ps
+
+
+# --- Ak použijete Deploy Script ---
+cd /volume1/docker/erp
+bash deploy.sh
+
+# alebo na NASe Synology:
+/volume1/docker/erp/deploy.sh
