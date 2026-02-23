@@ -1,14 +1,30 @@
 version: '3.8'
+
 services:
   web:
-    build: .
+    build: 
+      context: .
+      dockerfile: Dockerfile
+    container_name: erp_system
     ports:
       - "8000:8000"
     volumes:
-      - .:/app
-      - ./db.sqlite3:/app/db.sqlite3
-      - ./media:/app/media
-    restart: always
+      - erp_media:/app/media
+      - erp_db:/app
+    restart: unless-stopped
     environment:
-      - DEBUG=False
-      - ALLOWED_HOSTS=192.168.1.94,localhost,127.0.0.1
+      - PYTHONUNBUFFERED=1
+      - DEBUG=True
+      - DJANGO_SETTINGS_MODULE=config.settings
+    healthcheck:
+      test: ["CMD", "python", "-c", "import requests; requests.get('http://localhost:8000')"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 40s
+
+volumes:
+  erp_media:
+    driver: local
+  erp_db:
+    driver: local
