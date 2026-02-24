@@ -356,16 +356,26 @@
   </div>
 
   <!-- Kontrola kvality + uzavretie -->
-  {% if moze_uzavriet %}
-    <!-- Krok 1: Kontrola kvality -->
-    <div class="card border-primary mb-3" id="cardKontrolaKvality">
+  <div class="card border-primary mb-3" id="cardKontrolaKvality">
       <div class="card-header bg-primary text-white">
-        <h5 class="mb-0">🔬 Krok 1: Kontrola kvality</h5>
+        <h5 class="mb-0">🔬 Priebežná kontrola kvality (po smene / dávke)</h5>
       </div>
       <div class="card-body">
-        <p class="text-muted small mb-3">Vykonajte kontrolu kvality pred uzavretím zakázky. Fotky a merania sa uložia do záznamu.</p>
+        <p class="text-muted small mb-3">Môžete uložiť viac záznamov počas výroby. Každý záznam uloží operátora, počty kusov, merania aj fotku.</p>
         <form id="formKontrolaKvality" enctype="multipart/form-data">
           {% csrf_token %}
+          <input type="hidden" name="typ_kontroly" value="PRIEBEZNA">
+
+          <div class="row">
+            <div class="col-md-6 mb-3">
+              <label class="form-label fw-semibold">Počet OK kusov v tejto časti</label>
+              <input type="number" name="pocet_ok_kontroly" class="form-control" min="0" value="0">
+            </div>
+            <div class="col-md-6 mb-3">
+              <label class="form-label fw-semibold">Počet NOK kusov v tejto časti</label>
+              <input type="number" name="pocet_nok_kontroly" class="form-control" min="0" value="0">
+            </div>
+          </div>
 
           <!-- Parametre produktu -->
           {% if kontrolne_parametre %}
@@ -411,19 +421,63 @@
             🔬 Uložiť kontrolu kvality
           </button>
         </form>
-      </div>
-    </div>
 
+        {% if posledne_kontroly %}
+          <hr>
+          <h6 class="fw-semibold mb-2">🧾 Posledné záznamy kontroly</h6>
+          <div class="table-responsive">
+            <table class="table table-sm align-middle mb-0">
+              <thead>
+                <tr>
+                  <th>Čas</th>
+                  <th>Operátor</th>
+                  <th>Typ</th>
+                  <th>OK/NOK</th>
+                  <th>Foto</th>
+                </tr>
+              </thead>
+              <tbody>
+                {% for kontrola in posledne_kontroly %}
+                <tr>
+                  <td>{{ kontrola.cas_kontroly|date:"d.m.Y H:i" }}</td>
+                  <td>{{ kontrola.operator.username|default:"-" }}</td>
+                  <td>{{ kontrola.get_typ_kontroly_display }}</td>
+                  <td>{{ kontrola.pocet_ok_kusov }}/{{ kontrola.pocet_nok_kusov }}</td>
+                  <td>
+                    {% if kontrola.fotka or kontrola.fotka_balenia %}
+                      ✅
+                    {% else %}
+                      -
+                    {% endif %}
+                  </td>
+                </tr>
+                {% endfor %}
+              </tbody>
+            </table>
+          </div>
+        {% endif %}
+      </div>
+  </div>
+
+  {% if moze_uzavriet %}
     <!-- Krok 2: Uzavretie zakázky -->
     <div class="card border-success" id="cardUzavretie">
       <div class="card-body">
         <h5 class="card-title text-success">✅ Krok 2: Uzavrieť zakázku</h5>
-        <p class="card-text text-muted small">Všetky operácie sú hotové a potrebné množstvo bolo vyrobené.</p>
+        <p class="card-text text-muted small">Všetky operácie sú hotové a potrebné množstvo bolo vyrobené. Pri uzavretí je povinná finálna fotka balenia.</p>
         <div id="upozornenieKontrola" class="alert alert-warning small mb-2">
           ⚠️ Odporúčame najprv vykonať kontrolu kvality (Krok 1).
         </div>
-        <form method="post">
+        <form method="post" enctype="multipart/form-data">
           {% csrf_token %}
+          <div class="mb-3">
+            <label class="form-label fw-semibold">📦 Finálna fotka balenia *</label>
+            <input type="file" name="fotka_balenia_final" class="form-control" accept="image/*" capture="environment" required>
+          </div>
+          <div class="mb-3">
+            <label class="form-label fw-semibold">Poznámka k baleniu</label>
+            <textarea name="poznamka_balenia_final" class="form-control" rows="2" placeholder="Voliteľná poznámka k finálnemu baleniu"></textarea>
+          </div>
           <button type="submit" name="akcia" value="uzavri_zakazku"
                   id="btnUzavriet"
                   class="btn btn-success btn-lg w-100"
@@ -475,8 +529,9 @@
         // Mark step 1 done
         document.getElementById('cardKontrolaKvality').classList.remove('border-primary');
         document.getElementById('cardKontrolaKvality').classList.add('border-success');
-        formKK.querySelectorAll('input,textarea,button').forEach(el => el.disabled = true);
-        btn.textContent = '✅ Kontrola uložená';
+        formKK.reset();
+        btn.disabled = false;
+        btn.textContent = '🔬 Uložiť ďalší záznam kontroly';
         // Update step 2
         const upoz = document.getElementById('upozornenieKontrola');
         if (upoz) upoz.classList.add('d-none');

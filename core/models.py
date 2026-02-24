@@ -940,17 +940,26 @@ class VyrobnyZaznam(models.Model):
 
 # 7. MODEL: KONTROLA KVALITY
 class KontrolaKvality(models.Model):
+    TYPY_KONTROLY = [
+        ('PRIEBEZNA', '🔬 Priebežná kontrola'),
+        ('FINALNA', '📦 Finálne balenie'),
+    ]
+
     objednavka = models.ForeignKey(Objednavka, on_delete=models.CASCADE, related_name='kontroly')
     operator = models.ForeignKey(User, on_delete=models.SET_NULL, null=True)
     cas_kontroly = models.DateTimeField(auto_now_add=True)
+    typ_kontroly = models.CharField(max_length=20, choices=TYPY_KONTROLY, default='PRIEBEZNA', verbose_name="Typ kontroly")
+    pocet_ok_kusov = models.PositiveIntegerField(default=0, verbose_name="OK kusy v zázname")
+    pocet_nok_kusov = models.PositiveIntegerField(default=0, verbose_name="NOK kusy v zázname")
 
-    namerana_hodnota = models.CharField(max_length=50, verbose_name="Nameraná hodnota")
+    namerana_hodnota = models.CharField(max_length=500, verbose_name="Nameraná hodnota")
     vysledok_ok = models.BooleanField(default=True, verbose_name="Je to OK?")
     fotka = models.ImageField(upload_to='kontrola_kvality/', verbose_name="Fotka produktu", null=True, blank=True)
+    fotka_balenia = models.ImageField(upload_to='kontrola_kvality/balenie/', verbose_name="Fotka balenia", null=True, blank=True)
     poznamka = models.TextField(blank=True, verbose_name="Poznámka")
 
     def __str__(self):
-        return f"Kontrola {self.objednavka.id} - {'OK' if self.vysledok_ok else 'NOK'}"
+        return f"{self.get_typ_kontroly_display()} #{self.objednavka.cislo_objednavky} - {'OK' if self.vysledok_ok else 'NOK'}"
 
 
 # 8. MODEL: HLÁSENIA

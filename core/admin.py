@@ -229,8 +229,8 @@ admin.site.register(Sprievodka)
 
 @admin.register(KontrolaKvality)
 class KontrolaKvalityAdmin(admin.ModelAdmin):
-    list_display = ('objednavka', 'operator', 'cas_kontroly', 'vysledok_display', 'namerana_hodnota')
-    list_filter = ('vysledok_ok', 'cas_kontroly', 'objednavka__zakaznik')
+    list_display = ('objednavka', 'operator', 'typ_kontroly', 'pocet_ok_kusov', 'pocet_nok_kusov', 'cas_kontroly', 'vysledok_display', 'namerana_hodnota')
+    list_filter = ('typ_kontroly', 'vysledok_ok', 'cas_kontroly', 'objednavka__zakaznik')
     search_fields = ('objednavka__cislo_objednavky', 'objednavka__zakaznik', 'operator__username', 'namerana_hodnota')
     readonly_fields = ('cas_kontroly',)
     date_hierarchy = 'cas_kontroly'
@@ -239,8 +239,11 @@ class KontrolaKvalityAdmin(admin.ModelAdmin):
         ('Prepojenie', {
             'fields': ('objednavka', 'operator', 'cas_kontroly')
         }),
+        ('Typ záznamu', {
+            'fields': ('typ_kontroly', 'pocet_ok_kusov', 'pocet_nok_kusov')
+        }),
         ('Výsledok kontroly', {
-            'fields': ('namerana_hodnota', 'vysledok_ok', 'fotka', 'poznamka')
+            'fields': ('namerana_hodnota', 'vysledok_ok', 'fotka', 'fotka_balenia', 'poznamka')
         }),
     )
 
