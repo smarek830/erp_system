@@ -534,6 +534,25 @@ def operator_zakazka_detail(request, pk):
         # Uzavretie zakázky
         elif akcia == 'uzavri_zakazku':
             try:
+                fotka_balenia = request.FILES.get('fotka_balenia_final')
+                poznamka_balenia = request.POST.get('poznamka_balenia_final', '')
+
+                if not fotka_balenia:
+                    messages.error(request, '❌ Pri finálnom uzavretí je povinná fotka balenia.')
+                    return redirect('operator_zakazka_detail', pk=pk)
+
+                KontrolaKvality.objects.create(
+                    objednavka=zakazka,
+                    operator=request.user,
+                    typ_kontroly='FINALNA',
+                    pocet_ok_kusov=zakazka.celkom_ok_kusy,
+                    pocet_nok_kusov=zakazka.celkom_nok_kusy,
+                    namerana_hodnota='Finálna kontrola balenia',
+                    vysledok_ok=True,
+                    fotka_balenia=fotka_balenia,
+                    poznamka=poznamka_balenia,
+                )
+
                 zakazka.uzavri_zakazku()
                 messages.success(
                     request, 
@@ -563,6 +582,7 @@ def operator_zakazka_detail(request, pk):
         'dovod_neuzvretia': dovod if not moze_uzavriet else None,
         'dnes': timezone.now().date(),
         'kontrolne_parametre': zakazka.produkt.kontrolne_parametre.all(),
+        'posledne_kontroly': zakazka.kontroly.select_related('operator').order_by('-cas_kontroly')[:10],
     }
     
     return render(request, 'core/operator_zakazka_detail.html', context)
@@ -729,6 +749,19 @@ def uloz_kontrolu_kvality(request, pk):
         return JsonResponse({'status': 'error', 'message': 'Nie ste priradený k tejto objednávke!'})
 
     fotka = request.FILES.get('fotka_kontroly')
+    typ_kontroly = request.POST.get('typ_kontroly', 'PRIEBEZNA')
+    if typ_kontroly not in ['PRIEBEZNA', 'FINALNA']:
+        typ_kontroly = 'PRIEBEZNA'
+
+    try:
+        pocet_ok_kusov = int(request.POST.get('pocet_ok_kontroly') or 0)
+        pocet_nok_kusov = int(request.POST.get('pocet_nok_kontroly') or 0)
+    except ValueError:
+        return JsonResponse({'status': 'error', 'message': 'Počet kusov musí byť celé číslo.'})
+
+    if pocet_ok_kusov < 0 or pocet_nok_kusov < 0:
+        return JsonResponse({'status': 'error', 'message': 'Počet kusov nemôže byť záporný.'})
+
     poznamka = request.POST.get('poznamka_kontroly', '')
 
     parametre = objednavka.produkt.kontrolne_parametre.all()
@@ -753,6 +786,9 @@ def uloz_kontrolu_kvality(request, pk):
     kontrola = KontrolaKvality.objects.create(
         objednavka=objednavka,
         operator=request.user,
+        typ_kontroly=typ_kontroly,
+        pocet_ok_kusov=pocet_ok_kusov,
+        pocet_nok_kusov=pocet_nok_kusov,
         namerana_hodnota=namerana_text,
         vysledok_ok=vsetky_ok,
         fotka=fotka,
@@ -767,9 +803,10 @@ def uloz_kontrolu_kvality(request, pk):
         )
 
     vysledok_text = '✅ OK' if vsetky_ok else '❌ NOK – niektoré hodnoty sú mimo tolerancie'
+    typ_text = 'Priebežná kontrola' if typ_kontroly == 'PRIEBEZNA' else 'Finálna kontrola'
     return JsonResponse({
         'status': 'ok',
-        'message': f'Kontrola kvality uložená. Výsledok: {vysledok_text}',
+        'message': f'{typ_text} uložená. Výsledok: {vysledok_text}',
         'vysledok_ok': vsetky_ok,
         'kontrola_id': kontrola.id,
     })

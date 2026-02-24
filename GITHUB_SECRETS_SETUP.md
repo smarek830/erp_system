@@ -111,8 +111,9 @@ GitHub → smarek830/erp_system
 
 Po nastavení všetkých secrets každý push na vetvu `main` automaticky:
 1. Spustí Django testy ✅
-2. Nasadí aplikáciu na NAS cez SSH 🚀
-3. Overí, že app beží na porte 8000 🩺
+2. Otestuje SSH spojenie na NAS ✅
+3. Nasadí aplikáciu na NAS cez SSH 🚀
+4. Overí, že app beží na porte 8000 🩺
 
 ---
 

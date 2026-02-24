@@ -77,6 +77,12 @@ jobs:
           chmod 600 ~/.ssh/id_rsa
           ssh-keyscan -H "${{ secrets.NAS_HOST }}" >> ~/.ssh/known_hosts 2>/dev/null || true
 
+      - name: Otestuj SSH spojenie na NAS
+        run: |
+          ssh -o BatchMode=yes -o ConnectTimeout=15 -o StrictHostKeyChecking=no \
+              "${{ secrets.NAS_USER }}@${{ secrets.NAS_HOST }}" \
+              "echo '✅ SSH spojenie funguje'"
+
       - name: Nasaď na NAS cez SSH
         run: |
           ssh -o StrictHostKeyChecking=no \

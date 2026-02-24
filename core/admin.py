@@ -219,7 +219,6 @@ class StrojAdmin(admin.ModelAdmin):
     list_filter = ('status',)
 
 admin.site.register(VyrobnyZaznam)
-admin.site.register(KontrolaKvality)
 admin.site.register(HlasenieVyroby)
 admin.site.register(Material)
 admin.site.register(PrijemkaNaSklad)
@@ -227,6 +226,32 @@ admin.site.register(VydajkaZoSkladu)
 admin.site.register(KontrolnyParameter)
 admin.site.register(MeraniePriKontrole)
 admin.site.register(Sprievodka)
+
+@admin.register(KontrolaKvality)
+class KontrolaKvalityAdmin(admin.ModelAdmin):
+    list_display = ('objednavka', 'operator', 'typ_kontroly', 'pocet_ok_kusov', 'pocet_nok_kusov', 'cas_kontroly', 'vysledok_display', 'namerana_hodnota')
+    list_filter = ('typ_kontroly', 'vysledok_ok', 'cas_kontroly', 'objednavka__zakaznik')
+    search_fields = ('objednavka__cislo_objednavky', 'objednavka__zakaznik', 'operator__username', 'namerana_hodnota')
+    readonly_fields = ('cas_kontroly',)
+    date_hierarchy = 'cas_kontroly'
+
+    fieldsets = (
+        ('Prepojenie', {
+            'fields': ('objednavka', 'operator', 'cas_kontroly')
+        }),
+        ('Typ záznamu', {
+            'fields': ('typ_kontroly', 'pocet_ok_kusov', 'pocet_nok_kusov')
+        }),
+        ('Výsledok kontroly', {
+            'fields': ('namerana_hodnota', 'vysledok_ok', 'fotka', 'fotka_balenia', 'poznamka')
+        }),
+    )
+
+    def vysledok_display(self, obj):
+        if obj.vysledok_ok:
+            return format_html('<span style="padding: 3px 8px; background: #28a745; color: white; border-radius: 3px;">✅ OK</span>')
+        return format_html('<span style="padding: 3px 8px; background: #dc3545; color: white; border-radius: 3px;">❌ NOK</span>')
+    vysledok_display.short_description = "Výsledok"
 
 # INLINE pre príjemky a výdajky
 class PrijemkaHotovychDielovInline(admin.TabularInline):
