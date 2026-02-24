@@ -1,0 +1,139 @@
+name: CI + Deploy na NAS
+
+# ─────────────────────────────────────────────────────────────────────────────
+# Potrebné GitHub Secrets (Settings → Secrets and variables → Actions):
+#
+#   NAS_HOST          – IP alebo Tailscale hostname NASu, napr. 192.168.1.94
+#                       alebo Tailscale IP, napr. 100.64.x.x
+#   NAS_USER          – SSH používateľ na NASe, napr.  Marek
+#   NAS_SSH_KEY       – Obsah private SSH kľúča (~/.ssh/id_rsa)
+#                       Verejný kľúč musí byť na NASe v ~/.ssh/authorized_keys
+#   NAS_APP_PATH      – Cesta k projektu na NASe, napr. /volume1/docker/erp
+#   TAILSCALE_AUTHKEY – (voliteľné) Auth key z https://login.tailscale.com/admin/settings/keys
+#                       Potrebné iba ak je NAS dostupný len cez Tailscale VPN.
+# ─────────────────────────────────────────────────────────────────────────────
+
+on:
+  push:
+    branches:
+      - main
+
+jobs:
+  # ── 1. Testy ───────────────────────────────────────────────────────────────
+  test:
+    name: Spusti Django testy
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+
+    steps:
+      - name: Stiahni kód
+        uses: actions/checkout@v4
+
+      - name: Nastav Python 3.12
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+          cache: pip
+
+      - name: Nainštaluj závislosti
+        run: pip install -r requirements.txt
+
+      - name: Skontroluj konfiguráciu Django
+        run: python manage.py check
+        env:
+          DJANGO_SETTINGS_MODULE: config.settings
+
+      - name: Aplikuj migrácie
+        run: python manage.py migrate --run-syncdb
+        env:
+          DJANGO_SETTINGS_MODULE: config.settings
+
+      - name: Spusti testy
+        run: python manage.py test core --verbosity=2
+        env:
+          DJANGO_SETTINGS_MODULE: config.settings
+
+  # ── 2. Deploy na NAS ───────────────────────────────────────────────────────
+  deploy:
+    name: Deploy na Synology NAS
+    runs-on: ubuntu-latest
+    needs: test          # spustí sa len ak testy prešli
+    permissions:
+      contents: read
+
+    steps:
+      - name: Pripoj sa cez Tailscale (ak je nastavený)
+        # Preskočí tento krok, ak secret TAILSCALE_AUTHKEY nie je nastavený
+        if: secrets.TAILSCALE_AUTHKEY != ''
+        uses: tailscale/github-action@v3
+        with:
+          authkey: ${{ secrets.TAILSCALE_AUTHKEY }}
+
+      - name: Nastav SSH kľúč
+        run: |
+          mkdir -p ~/.ssh
+          echo "${{ secrets.NAS_SSH_KEY }}" > ~/.ssh/id_rsa
+          chmod 600 ~/.ssh/id_rsa
+          ssh-keyscan -H "${{ secrets.NAS_HOST }}" >> ~/.ssh/known_hosts 2>/dev/null || true
+
+      - name: Nasaď na NAS cez SSH
+        run: |
+          ssh -o StrictHostKeyChecking=no \
+              "${{ secrets.NAS_USER }}@${{ secrets.NAS_HOST }}" \
+              "bash -s" << 'ENDSSH'
+            set -e
+            APP_PATH="${{ secrets.NAS_APP_PATH }}"
+
+            echo "📂 Prechod do projektu: $APP_PATH"
+            cd "$APP_PATH"
+
+            echo "⬇️  Stiahnutie najnovšieho kódu z GitHubu..."
+            git pull origin main
+
+            echo "🔨 Build Docker image..."
+            docker-compose build
+
+            echo "🔄 Reštart kontajnerov..."
+            docker-compose up -d
+
+            echo "⏳ Čakanie na spustenie aplikácie..."
+            for i in $(seq 1 12); do
+              if docker-compose ps | grep -q "Up"; then
+                echo "  ✓ Kontajner beží (pokus $i)"
+                break
+              fi
+              echo "  … pokus $i/12, čakám 5 sekúnd..."
+              sleep 5
+            done
+
+            echo "🗄️  Aplikovanie migrácií databázy..."
+            docker-compose exec -T web python manage.py migrate --noinput
+
+            echo "📦 Zbieranie statických súborov..."
+            # || true: collectstatic môže zlyhať pri prvom behu kvôli právam, app to neblokuje
+            docker-compose exec -T web python manage.py collectstatic --noinput || true
+
+            echo ""
+            echo "✅ Deployment dokončený!"
+          ENDSSH
+
+      - name: Zdravotná kontrola (health-check)
+        run: |
+          echo "🩺 Kontrola dostupnosti aplikácie..."
+          STATUS="000"
+          for i in $(seq 1 6); do
+            STATUS=$(curl -o /dev/null -s -w "%{http_code}" \
+                      --max-time 10 \
+                      "http://${{ secrets.NAS_HOST }}:8000/" || echo "000")
+            echo "  pokus $i/6 → HTTP $STATUS"
+            if [ "$STATUS" = "200" ] || [ "$STATUS" = "302" ]; then
+              break
+            fi
+            sleep 5
+          done
+          if [ "$STATUS" != "200" ] && [ "$STATUS" != "302" ]; then
+            echo "⚠️  Aplikácia neodpovedá správne (status $STATUS). Skontroluj logy na NASe."
+            exit 1
+          fi
+          echo "✅ Aplikácia beží na http://${{ secrets.NAS_HOST }}:8000"
