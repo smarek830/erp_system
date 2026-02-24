@@ -82,7 +82,7 @@ jobs:
 
           sed -i 's/\r$//' ~/.ssh/id_ed25519
           chmod 600 ~/.ssh/id_ed25519
-          grep -q "BEGIN OPENSSH PRIVATE KEY" ~/.ssh/id_ed25519 || (echo "NAS_SSH_KEY nie je validný OpenSSH private key" && exit 1)
+          grep -Eq "BEGIN (OPENSSH|RSA|EC|DSA) PRIVATE KEY" ~/.ssh/id_ed25519 || (echo "NAS_SSH_KEY nie je validný private key" && exit 1)
           ssh-keygen -lf ~/.ssh/id_ed25519
           ssh-keyscan -H "${{ secrets.NAS_HOST }}" >> ~/.ssh/known_hosts 2>/dev/null || true
 
