@@ -65,7 +65,7 @@ jobs:
     steps:
       - name: Pripoj sa cez Tailscale (ak je nastavený)
         # Preskočí tento krok, ak secret TAILSCALE_AUTHKEY nie je nastavený
-        if: secrets.TAILSCALE_AUTHKEY != ''
+        if: ${{ secrets.TAILSCALE_AUTHKEY != '' }}
         uses: tailscale/github-action@v3
         with:
           authkey: ${{ secrets.TAILSCALE_AUTHKEY }}
