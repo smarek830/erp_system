@@ -101,24 +101,44 @@ jobs:
           ssh -i ~/.ssh/id_ed25519 -o IdentitiesOnly=yes -o StrictHostKeyChecking=no -o PubkeyAcceptedAlgorithms=+ssh-rsa -o HostKeyAlgorithms=+ssh-rsa \
               "${{ secrets.NAS_USER }}@${{ secrets.NAS_HOST }}" \
               "bash -s" << 'ENDSSH'
-            set -e
+            set -euxo pipefail
             APP_PATH="${{ secrets.NAS_APP_PATH }}"
+
+            echo "👤 User: $(whoami)"
+            echo "🏠 Home: $HOME"
+            echo "📍 Current dir: $(pwd)"
+            echo "🧭 APP_PATH: $APP_PATH"
+
+            if [ ! -d "$APP_PATH" ]; then
+              echo "❌ NAS_APP_PATH neexistuje: $APP_PATH"
+              exit 1
+            fi
 
             echo "📂 Prechod do projektu: $APP_PATH"
             cd "$APP_PATH"
+
+            if command -v docker-compose >/dev/null 2>&1; then
+              COMPOSE_CMD="docker-compose"
+            elif docker compose version >/dev/null 2>&1; then
+              COMPOSE_CMD="docker compose"
+            else
+              echo "❌ Nenašiel som docker-compose ani docker compose na NASe."
+              exit 1
+            fi
+            echo "🐳 Použijem: $COMPOSE_CMD"
 
             echo "⬇️  Stiahnutie najnovšieho kódu z GitHubu..."
             git pull origin main
 
             echo "🔨 Build Docker image..."
-            docker-compose build
+            $COMPOSE_CMD build
 
             echo "🔄 Reštart kontajnerov..."
-            docker-compose up -d
+            $COMPOSE_CMD up -d
 
             echo "⏳ Čakanie na spustenie aplikácie..."
             for i in $(seq 1 12); do
-              if docker-compose ps | grep -q "Up"; then
+              if $COMPOSE_CMD ps | grep -q "Up"; then
                 echo "  ✓ Kontajner beží (pokus $i)"
                 break
               fi
@@ -127,11 +147,11 @@ jobs:
             done
 
             echo "🗄️  Aplikovanie migrácií databázy..."
-            docker-compose exec -T web python manage.py migrate --noinput
+            $COMPOSE_CMD exec -T web python manage.py migrate --noinput
 
             echo "📦 Zbieranie statických súborov..."
             # || true: collectstatic môže zlyhať pri prvom behu kvôli právam, app to neblokuje
-            docker-compose exec -T web python manage.py collectstatic --noinput || true
+            $COMPOSE_CMD exec -T web python manage.py collectstatic --noinput || true
 
             echo ""
             echo "✅ Deployment dokončený!"
