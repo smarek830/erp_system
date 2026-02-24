@@ -134,10 +134,22 @@ jobs:
             elif [ -x /usr/bin/docker ] && /usr/bin/docker compose version >/dev/null 2>&1; then
               COMPOSE_CMD="/usr/bin/docker compose"
             else
-              echo "❌ Nenašiel som docker-compose ani docker compose na NASe (ani v /usr/local/bin)."
-              echo "🔎 whereis docker: $(whereis docker || true)"
-              echo "🔎 whereis docker-compose: $(whereis docker-compose || true)"
-              exit 1
+              echo "⚠️ Compose nebol nájdený, skúšam fallback inštaláciu cez pip3 --user"
+              if command -v pip3 >/dev/null 2>&1; then
+                pip3 install --user docker-compose || true
+                export PATH="$PATH:$HOME/.local/bin"
+              fi
+
+              if command -v docker-compose >/dev/null 2>&1; then
+                COMPOSE_CMD="docker-compose"
+              elif [ -x "$HOME/.local/bin/docker-compose" ]; then
+                COMPOSE_CMD="$HOME/.local/bin/docker-compose"
+              else
+                echo "❌ Nenašiel som docker-compose ani docker compose na NASe (ani po fallback inštalácii)."
+                echo "🔎 whereis docker: $(whereis docker || true)"
+                echo "🔎 whereis docker-compose: $(whereis docker-compose || true)"
+                exit 1
+              fi
             fi
             echo "🐳 Použijem: $COMPOSE_CMD"
 
