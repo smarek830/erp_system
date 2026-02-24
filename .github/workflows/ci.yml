@@ -1,0 +1,42 @@
+name: CI – Django testy
+
+on:
+  push:
+    branches: ["**"]
+  pull_request:
+    branches: ["**"]
+
+jobs:
+  test:
+    name: Spusti Django testy
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+
+    steps:
+      - name: Stiahni kód
+        uses: actions/checkout@v4
+
+      - name: Nastav Python 3.12
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+          cache: pip
+
+      - name: Nainštaluj závislosti
+        run: pip install -r requirements.txt
+
+      - name: Skontroluj konfiguráciu Django
+        run: python manage.py check
+        env:
+          DJANGO_SETTINGS_MODULE: config.settings
+
+      - name: Aplikuj migrácie
+        run: python manage.py migrate --run-syncdb
+        env:
+          DJANGO_SETTINGS_MODULE: config.settings
+
+      - name: Spusti testy
+        run: python manage.py test core --verbosity=2
+        env:
+          DJANGO_SETTINGS_MODULE: config.settings
