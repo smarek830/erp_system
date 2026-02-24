@@ -78,10 +78,45 @@ jobs:
         run: |
           mkdir -p ~/.ssh
 
-          python3 -c "import os,pathlib; key=os.environ.get('NAS_SSH_KEY',''); assert key.strip(), 'NAS_SSH_KEY je prázdny alebo chýba.'; key = key.replace('\\\\n','\\n') if ('\\\\n' in key and '\\n' not in key) else key; pathlib.Path.home().joinpath('.ssh','id_ed25519').write_text(key, encoding='utf-8')"
+          python3 - << 'PY'
+    import base64
+    import os
+    import pathlib
+
+    raw = os.environ.get("NAS_SSH_KEY", "")
+    if not raw or not raw.strip():
+      raise SystemExit("NAS_SSH_KEY je prázdny alebo chýba.")
+
+    key = raw.strip()
+
+    # Odstráni obalové úvodzovky, ak boli omylom vložené do secretu
+    if (key.startswith('"') and key.endswith('"')) or (key.startswith("'") and key.endswith("'")):
+      key = key[1:-1]
+
+    # Podpora escaped novej línie (\n) v jednom riadku
+    if "\\n" in key and "\n" not in key:
+      key = key.replace("\\n", "\n")
+
+    # Podpora base64 formátu secretu
+    if "BEGIN " not in key:
+      try:
+        decoded = base64.b64decode(key, validate=True).decode("utf-8")
+        if "BEGIN " in decoded:
+          key = decoded
+      except Exception:
+        pass
+
+    key = key.replace("\r\n", "\n").replace("\r", "\n")
+    if not key.endswith("\n"):
+      key += "\n"
+
+    path = pathlib.Path.home() / ".ssh" / "id_ed25519"
+    path.write_text(key, encoding="utf-8")
+    PY
 
           sed -i 's/\r$//' ~/.ssh/id_ed25519
           chmod 600 ~/.ssh/id_ed25519
+          ssh-keygen -y -f ~/.ssh/id_ed25519 > /dev/null || (echo "NAS_SSH_KEY sa nedá načítať. Ulož celý private key (bez passphrase) alebo jeho base64 verziu." && exit 1)
           ssh-keyscan -H "${{ secrets.NAS_HOST }}" >> ~/.ssh/known_hosts 2>/dev/null || true
 
       - name: Otestuj SSH spojenie na NAS
