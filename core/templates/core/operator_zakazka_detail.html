@@ -355,16 +355,78 @@
     </div>
   </div>
 
-  <!-- Tlačidlo uzavrieť zakázku -->
+  <!-- Kontrola kvality + uzavretie -->
   {% if moze_uzavriet %}
-    <div class="card border-success">
+    <!-- Krok 1: Kontrola kvality -->
+    <div class="card border-primary mb-3" id="cardKontrolaKvality">
+      <div class="card-header bg-primary text-white">
+        <h5 class="mb-0">🔬 Krok 1: Kontrola kvality</h5>
+      </div>
       <div class="card-body">
-        <h5 class="card-title text-success">✅ Zakázka je pripravená na uzavretie</h5>
-        <p class="card-text">Všetky operácie sú hotové a potrebné množstvo bolo vyrobené.</p>
+        <p class="text-muted small mb-3">Vykonajte kontrolu kvality pred uzavretím zakázky. Fotky a merania sa uložia do záznamu.</p>
+        <form id="formKontrolaKvality" enctype="multipart/form-data">
+          {% csrf_token %}
+
+          <!-- Parametre produktu -->
+          {% if kontrolne_parametre %}
+            <h6 class="fw-semibold mb-2">📐 Merania</h6>
+            {% for param in kontrolne_parametre %}
+            <div class="mb-3">
+              <label class="form-label fw-semibold">
+                {{ param.nazov }}
+                <small class="text-muted fw-normal">
+                  ({{ param.hodnota_nominalna }} +{{ param.tolerancia_plus }}/-{{ param.tolerancia_minus }} {{ param.jednotka }})
+                </small>
+              </label>
+              <div class="input-group">
+                <input type="number" step="0.001"
+                       name="meranie_{{ param.id }}"
+                       class="form-control form-control-lg"
+                       placeholder="Nameraná hodnota">
+                <span class="input-group-text">{{ param.jednotka }}</span>
+              </div>
+            </div>
+            {% endfor %}
+            <hr>
+          {% endif %}
+
+          <!-- Fotka merania -->
+          <div class="mb-3">
+            <label class="form-label fw-semibold">📷 Fotka merania / výrobku</label>
+            <input type="file" name="fotka_kontroly" class="form-control form-control-lg"
+                   accept="image/*" capture="environment">
+            <div class="form-text">Odfotografujte meranie alebo výrobok mobilným telefónom.</div>
+          </div>
+
+          <!-- Poznámka -->
+          <div class="mb-3">
+            <label class="form-label fw-semibold">📝 Poznámka ku kontrole</label>
+            <textarea name="poznamka_kontroly" class="form-control" rows="2"
+                      placeholder="Voliteľná poznámka…"></textarea>
+          </div>
+
+          <div id="alertKontrolaKvality" class="alert d-none mb-2" role="alert"></div>
+
+          <button type="submit" id="btnUlozKontrolu" class="btn btn-primary btn-lg w-100">
+            🔬 Uložiť kontrolu kvality
+          </button>
+        </form>
+      </div>
+    </div>
+
+    <!-- Krok 2: Uzavretie zakázky -->
+    <div class="card border-success" id="cardUzavretie">
+      <div class="card-body">
+        <h5 class="card-title text-success">✅ Krok 2: Uzavrieť zakázku</h5>
+        <p class="card-text text-muted small">Všetky operácie sú hotové a potrebné množstvo bolo vyrobené.</p>
+        <div id="upozornenieKontrola" class="alert alert-warning small mb-2">
+          ⚠️ Odporúčame najprv vykonať kontrolu kvality (Krok 1).
+        </div>
         <form method="post">
           {% csrf_token %}
-          <button type="submit" name="akcia" value="uzavri_zakazku" 
-              class="btn btn-success btn-lg w-100"
+          <button type="submit" name="akcia" value="uzavri_zakazku"
+                  id="btnUzavriet"
+                  class="btn btn-success btn-lg w-100"
                   onclick="return confirm('Naozaj chcete uzavrieť zakázku a naskladniť hotové diely?')">
             ✅ Uzavrieť zakázku a naskladniť
           </button>
@@ -379,4 +441,67 @@
   {% endif %}
 
 </div>
+
+<script>
+(function () {
+  const formKK = document.getElementById('formKontrolaKvality');
+  if (!formKK) return;
+
+  function getCsrf() {
+    const cookieEntry = document.cookie.split(';').find(s => s.trim().startsWith('csrftoken='));
+    return cookieEntry ? decodeURIComponent(cookieEntry.trim().split('=')[1]) : '';
+  }
+
+  formKK.addEventListener('submit', function (e) {
+    e.preventDefault();
+    const btn = document.getElementById('btnUlozKontrolu');
+    const alert = document.getElementById('alertKontrolaKvality');
+    btn.disabled = true;
+    btn.textContent = '⏳ Ukladám…';
+
+    const fd = new FormData(formKK);
+
+    fetch('/api/operator/kontrola-kvality/{{ zakazka.pk }}/', {
+      method: 'POST',
+      headers: { 'X-CSRFToken': getCsrf() },
+      body: fd,
+    })
+    .then(r => r.json())
+    .then(data => {
+      alert.classList.remove('d-none', 'alert-danger', 'alert-success', 'alert-warning');
+      if (data.status === 'ok') {
+        alert.classList.add('alert-success');
+        alert.textContent = data.message;
+        // Mark step 1 done
+        document.getElementById('cardKontrolaKvality').classList.remove('border-primary');
+        document.getElementById('cardKontrolaKvality').classList.add('border-success');
+        formKK.querySelectorAll('input,textarea,button').forEach(el => el.disabled = true);
+        btn.textContent = '✅ Kontrola uložená';
+        // Update step 2
+        const upoz = document.getElementById('upozornenieKontrola');
+        if (upoz) upoz.classList.add('d-none');
+        if (!data.vysledok_ok) {
+          const warn = document.createElement('div');
+          warn.className = 'alert alert-warning small mb-2';
+          warn.textContent = '⚠️ Niektoré merania sú mimo tolerancie – skontrolujte záznamy.';
+          document.getElementById('btnUzavriet').before(warn);
+        }
+      } else {
+        alert.classList.add('alert-danger');
+        alert.textContent = data.message;
+        btn.disabled = false;
+        btn.textContent = '🔬 Uložiť kontrolu kvality';
+      }
+    })
+    .catch(err => {
+      alert.classList.remove('d-none');
+      alert.classList.add('alert-danger');
+      alert.textContent = '❌ Chyba siete: ' + err.message;
+      btn.disabled = false;
+      btn.textContent = '🔬 Uložiť kontrolu kvality';
+    });
+  });
+})();
+</script>
+
 {% endblock %}

@@ -8,7 +8,9 @@ from .models import (
     HlasenieVyroby, Operacia, Kontrakt, Material, VyrobnaDavka,
     SkladHotovychDielov, PrijemkaHotovychDielov, VydajkaHotovychDielov,
     PrijemkaNaSklad, VydajkaZoSkladu, OperaciaVyroby, OperatorNaOperacii,
+    KontrolnyParameter, MeraniePriKontrole,
 )
+from decimal import Decimal, InvalidOperation
 from django.http import JsonResponse, HttpResponse
 from django.views.decorators.http import require_POST
 from django.utils import timezone
@@ -560,6 +562,7 @@ def operator_zakazka_detail(request, pk):
         'moze_uzavriet': moze_uzavriet,
         'dovod_neuzvretia': dovod if not moze_uzavriet else None,
         'dnes': timezone.now().date(),
+        'kontrolne_parametre': zakazka.produkt.kontrolne_parametre.all(),
     }
     
     return render(request, 'core/operator_zakazka_detail.html', context)
@@ -715,6 +718,61 @@ def end_work(request, pk):
     objednavka.save()
     
     return JsonResponse({'status': 'ok', 'message': 'Práca ukončená'})
+
+@login_required
+@require_POST
+def uloz_kontrolu_kvality(request, pk):
+    """Uloženie záznamu kontroly kvality s meraniami a fotkou"""
+    objednavka = get_object_or_404(Objednavka, pk=pk)
+
+    if request.user not in objednavka.priradeni_operatori.all() and not objednavka.zaznamy.filter(operator=request.user).exists():
+        return JsonResponse({'status': 'error', 'message': 'Nie ste priradený k tejto objednávke!'})
+
+    fotka = request.FILES.get('fotka_kontroly')
+    poznamka = request.POST.get('poznamka_kontroly', '')
+
+    parametre = objednavka.produkt.kontrolne_parametre.all()
+    merania_data = []
+    vsetky_ok = True
+
+    for param in parametre:
+        hodnota_str = request.POST.get(f'meranie_{param.id}', '').strip()
+        if hodnota_str:
+            try:
+                hodnota = Decimal(hodnota_str)
+                min_h = param.hodnota_nominalna - param.tolerancia_minus
+                max_h = param.hodnota_nominalna + param.tolerancia_plus
+                if not (min_h <= hodnota <= max_h):
+                    vsetky_ok = False
+                merania_data.append((param, hodnota))
+            except InvalidOperation:
+                return JsonResponse({'status': 'error', 'message': f'Neplatná hodnota pre parameter "{param.nazov}"'})
+
+    namerana_text = ', '.join([f"{p.nazov}: {v} {p.jednotka}" for p, v in merania_data]) if merania_data else 'Bez meraní'
+
+    kontrola = KontrolaKvality.objects.create(
+        objednavka=objednavka,
+        operator=request.user,
+        namerana_hodnota=namerana_text,
+        vysledok_ok=vsetky_ok,
+        fotka=fotka,
+        poznamka=poznamka,
+    )
+
+    for param, hodnota in merania_data:
+        MeraniePriKontrole.objects.create(
+            kontrola=kontrola,
+            parameter=param,
+            namerana_hodnota=hodnota,
+        )
+
+    vysledok_text = '✅ OK' if vsetky_ok else '❌ NOK – niektoré hodnoty sú mimo tolerancie'
+    return JsonResponse({
+        'status': 'ok',
+        'message': f'Kontrola kvality uložená. Výsledok: {vysledok_text}',
+        'vysledok_ok': vsetky_ok,
+        'kontrola_id': kontrola.id,
+    })
 
 @login_required
 @require_POST
