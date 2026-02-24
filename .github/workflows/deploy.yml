@@ -86,7 +86,12 @@ jobs:
 
       - name: Otestuj SSH spojenie na NAS
         run: |
-          ssh -i ~/.ssh/id_ed25519 -o BatchMode=yes -o ConnectTimeout=15 -o IdentitiesOnly=yes -o StrictHostKeyChecking=no -o PubkeyAcceptedAlgorithms=+ssh-rsa -o HostKeyAlgorithms=+ssh-rsa \
+          echo "🔎 DNS/host diagnostika pre ${{ secrets.NAS_HOST }}"
+          getent hosts "${{ secrets.NAS_HOST }}" || true
+          echo "🔎 Test TCP portu 22"
+          timeout 10 bash -c "cat < /dev/null > /dev/tcp/${{ secrets.NAS_HOST }}/22" && echo "✅ Port 22 je dostupný" || (echo "❌ Port 22 nie je dostupný" && exit 1)
+
+          ssh -vv -i ~/.ssh/id_ed25519 -o BatchMode=yes -o ConnectTimeout=15 -o IdentitiesOnly=yes -o StrictHostKeyChecking=no -o PubkeyAcceptedAlgorithms=+ssh-rsa -o HostKeyAlgorithms=+ssh-rsa \
               "${{ secrets.NAS_USER }}@${{ secrets.NAS_HOST }}" \
               "echo '✅ SSH spojenie funguje'"
 
