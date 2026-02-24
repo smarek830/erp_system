@@ -41,3 +41,22 @@ htmlcov/
 *.bak
 *.tmp
 node_modules/
+
+# Temporary agent files
+tmpclaude-*
+
+# Sensitive / local-only files
+pass.txt
+data_docker.json
+data_export.json
+data_full.json
+
+# Debug / one-off scripts
+debug_dashboard.html
+check_template.py
+test_live_server.py
+test_dashboard.py
+test_nok_kompenzacia.py
+
+# Empty placeholder directories
+erp/
