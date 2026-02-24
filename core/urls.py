@@ -36,6 +36,7 @@ urlpatterns = [
     path('api/operator/end/<int:objednavka_pk>/<int:operacia_pk>/', views.end_operation, name='end_operation'),
     path('api/operator/end-work/<int:pk>/', views.end_work, name='end_work'),
     path('api/operator/report-problem/<int:pk>/', views.report_problem, name='report_problem'),
+    path('api/operator/kontrola-kvality/<int:pk>/', views.uloz_kontrolu_kvality, name='uloz_kontrolu_kvality'),
     path('api/sprievodka/<int:pk>/', views.download_sprievodka, name='download_sprievodka'),
 
     # Nové webové rozhrania
