@@ -108,6 +108,10 @@ jobs:
             echo "🏠 Home: $HOME"
             echo "📍 Current dir: $(pwd)"
             echo "🧭 APP_PATH: $APP_PATH"
+            echo "🧪 PATH pred úpravou: $PATH"
+
+            export PATH="$PATH:/usr/local/bin:/usr/bin:/bin:/usr/sbin:/sbin"
+            echo "🧪 PATH po úprave: $PATH"
 
             if [ ! -d "$APP_PATH" ]; then
               echo "❌ NAS_APP_PATH neexistuje: $APP_PATH"
@@ -121,8 +125,18 @@ jobs:
               COMPOSE_CMD="docker-compose"
             elif docker compose version >/dev/null 2>&1; then
               COMPOSE_CMD="docker compose"
+            elif [ -x /usr/local/bin/docker-compose ]; then
+              COMPOSE_CMD="/usr/local/bin/docker-compose"
+            elif [ -x /usr/bin/docker-compose ]; then
+              COMPOSE_CMD="/usr/bin/docker-compose"
+            elif [ -x /usr/local/bin/docker ] && /usr/local/bin/docker compose version >/dev/null 2>&1; then
+              COMPOSE_CMD="/usr/local/bin/docker compose"
+            elif [ -x /usr/bin/docker ] && /usr/bin/docker compose version >/dev/null 2>&1; then
+              COMPOSE_CMD="/usr/bin/docker compose"
             else
-              echo "❌ Nenašiel som docker-compose ani docker compose na NASe."
+              echo "❌ Nenašiel som docker-compose ani docker compose na NASe (ani v /usr/local/bin)."
+              echo "🔎 whereis docker: $(whereis docker || true)"
+              echo "🔎 whereis docker-compose: $(whereis docker-compose || true)"
               exit 1
             fi
             echo "🐳 Použijem: $COMPOSE_CMD"
