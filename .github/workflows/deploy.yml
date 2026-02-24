@@ -75,19 +75,20 @@ jobs:
       - name: Nastav SSH kľúč
         run: |
           mkdir -p ~/.ssh
-          echo "${{ secrets.NAS_SSH_KEY }}" > ~/.ssh/id_rsa
+          printf '%s' "${{ secrets.NAS_SSH_KEY }}" > ~/.ssh/id_rsa
+          sed -i 's/\r$//' ~/.ssh/id_rsa
           chmod 600 ~/.ssh/id_rsa
           ssh-keyscan -H "${{ secrets.NAS_HOST }}" >> ~/.ssh/known_hosts 2>/dev/null || true
 
       - name: Otestuj SSH spojenie na NAS
         run: |
-          ssh -o BatchMode=yes -o ConnectTimeout=15 -o StrictHostKeyChecking=no \
+          ssh -i ~/.ssh/id_rsa -o BatchMode=yes -o ConnectTimeout=15 -o IdentitiesOnly=yes -o StrictHostKeyChecking=no \
               "${{ secrets.NAS_USER }}@${{ secrets.NAS_HOST }}" \
               "echo '✅ SSH spojenie funguje'"
 
       - name: Nasaď na NAS cez SSH
         run: |
-          ssh -o StrictHostKeyChecking=no \
+          ssh -i ~/.ssh/id_rsa -o IdentitiesOnly=yes -o StrictHostKeyChecking=no \
               "${{ secrets.NAS_USER }}@${{ secrets.NAS_HOST }}" \
               "bash -s" << 'ENDSSH'
             set -e
