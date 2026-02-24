@@ -73,11 +73,16 @@ jobs:
           authkey: ${{ env.TAILSCALE_AUTHKEY }}
 
       - name: Nastav SSH kľúč
+        env:
+          NAS_SSH_KEY: ${{ secrets.NAS_SSH_KEY }}
         run: |
           mkdir -p ~/.ssh
-          printf '%b' "${{ secrets.NAS_SSH_KEY }}" > ~/.ssh/id_ed25519
+
+          python3 -c "import os,pathlib; key=os.environ.get('NAS_SSH_KEY',''); assert key.strip(), 'NAS_SSH_KEY je prázdny alebo chýba.'; key = key.replace('\\\\n','\\n') if ('\\\\n' in key and '\\n' not in key) else key; pathlib.Path.home().joinpath('.ssh','id_ed25519').write_text(key, encoding='utf-8')"
+
           sed -i 's/\r$//' ~/.ssh/id_ed25519
           chmod 600 ~/.ssh/id_ed25519
+          grep -q "BEGIN OPENSSH PRIVATE KEY" ~/.ssh/id_ed25519 || (echo "NAS_SSH_KEY nie je validný OpenSSH private key" && exit 1)
           ssh-keygen -lf ~/.ssh/id_ed25519
           ssh-keyscan -H "${{ secrets.NAS_HOST }}" >> ~/.ssh/known_hosts 2>/dev/null || true
 
