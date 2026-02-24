@@ -86,13 +86,13 @@ jobs:
 
       - name: Otestuj SSH spojenie na NAS
         run: |
-          ssh -i ~/.ssh/id_ed25519 -o BatchMode=yes -o ConnectTimeout=15 -o IdentitiesOnly=yes -o StrictHostKeyChecking=no \
+          ssh -i ~/.ssh/id_ed25519 -o BatchMode=yes -o ConnectTimeout=15 -o IdentitiesOnly=yes -o StrictHostKeyChecking=no -o PubkeyAcceptedAlgorithms=+ssh-rsa -o HostKeyAlgorithms=+ssh-rsa \
               "${{ secrets.NAS_USER }}@${{ secrets.NAS_HOST }}" \
               "echo '✅ SSH spojenie funguje'"
 
       - name: Nasaď na NAS cez SSH
         run: |
-          ssh -i ~/.ssh/id_ed25519 -o IdentitiesOnly=yes -o StrictHostKeyChecking=no \
+          ssh -i ~/.ssh/id_ed25519 -o IdentitiesOnly=yes -o StrictHostKeyChecking=no -o PubkeyAcceptedAlgorithms=+ssh-rsa -o HostKeyAlgorithms=+ssh-rsa \
               "${{ secrets.NAS_USER }}@${{ secrets.NAS_HOST }}" \
               "bash -s" << 'ENDSSH'
             set -e
