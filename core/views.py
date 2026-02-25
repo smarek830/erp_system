@@ -15,7 +15,7 @@ from django.http import JsonResponse, HttpResponse
 from django.views.decorators.http import require_POST
 from django.utils import timezone
 from django.template.loader import render_to_string
-from django.db.models import Q, Sum, Count, F  # ← DÔLEŽITÉ: F je tu!
+from django.db.models import Q, Sum, Count, F, Prefetch  # ← DÔLEŽITÉ: F je tu!
 from django.db.models.functions import TruncDate
 import json
 from .pdf_generator import generate_sprievodka_pdf
@@ -287,12 +287,55 @@ def detail_zakazky(request, pk):
             vyrobna_davka.vytvor_operacie()
         vyrobne_davky.append(vyrobna_davka)
 
-    operacie = zakazka.operacie.select_related('stroj', 'operator').order_by('poradie')
+    operacie = (
+        zakazka.operacie
+        .select_related('stroj', 'operator')
+        .prefetch_related('operatori__operator')
+        .order_by('poradie')
+    )
+
+    for operacia in operacie:
+        operacia.spracovane_celkom = operacia.kusy_spracovane_celkom()
+        operacia.ciel_kusy = operacia.cielove_kusy_na_spracovanie()
+        if operacia.ciel_kusy > 0:
+            operacia.progres_percent = int(min(100, round((operacia.spracovane_celkom / operacia.ciel_kusy) * 100)))
+        else:
+            operacia.progres_percent = 0
+        operacia.dostupne_kusy = operacia.get_dostupne_kusy_na_vstupe()
+        operacia.operatori_unikatni = list(dict.fromkeys(
+            operacia.operatori.values_list('operator__username', flat=True)
+        ))
+
+    kontroly = (
+        zakazka.kontroly
+        .select_related('operator')
+        .prefetch_related(
+            Prefetch('merania', queryset=MeraniePriKontrole.objects.select_related('parameter'))
+        )
+        .order_by('-cas_kontroly')
+    )
+
+    for kontrola in kontroly:
+        kontrola.merani_spolu = kontrola.merania.count()
+        kontrola.merani_nok = sum(1 for meranie in kontrola.merania.all() if not meranie.je_v_tolerancii())
+
+    kvalita_sumar = kontroly.aggregate(
+        pocet_kontrol=Count('id'),
+        ok_kusy=Sum('pocet_ok_kusov'),
+        nok_kusy=Sum('pocet_nok_kusov'),
+        nok_zaznamy=Count('id', filter=Q(vysledok_ok=False)),
+    )
+    kvalita_sumar['ok_kusy'] = kvalita_sumar['ok_kusy'] or 0
+    kvalita_sumar['nok_kusy'] = kvalita_sumar['nok_kusy'] or 0
+    kvalita_sumar['pocet_kontrol'] = kvalita_sumar['pocet_kontrol'] or 0
+    kvalita_sumar['nok_zaznamy'] = kvalita_sumar['nok_zaznamy'] or 0
 
     context = {
         'zakazka': zakazka,
         'vyrobne_davky': vyrobne_davky,
         'operacie': operacie,
+        'kontroly': kontroly,
+        'kvalita_sumar': kvalita_sumar,
         'dnes': timezone.now().date(),
     }
 
