@@ -20,7 +20,7 @@ from django.db.models.functions import TruncDate
 import json
 import hashlib
 from .pdf_generator import generate_sprievodka_pdf
-from datetime import datetime, timedelta
+from datetime import datetime, timedelta, date
 import openpyxl
 from openpyxl.styles import Font, PatternFill, Alignment
 
@@ -499,6 +499,98 @@ def zoznam_strojov(request):
     stroje = Stroj.objects.all().order_by("nazov")
     from .models import OperaciaVyroby
 
+    interval = request.GET.get('interval', 'dni')
+    if interval not in {'dni', 'tyzdne', 'mesiace'}:
+        interval = 'dni'
+
+    rozsah = request.GET.get('rozsah', '30')
+    if rozsah not in {'7', '30', '90'}:
+        rozsah = '30'
+    rozsah_dni = int(rozsah)
+
+    now = timezone.now()
+    today = now.date()
+
+    def add_months(base_date, months):
+        year = base_date.year + (base_date.month - 1 + months) // 12
+        month = (base_date.month - 1 + months) % 12 + 1
+        return date(year, month, 1)
+
+    if interval == 'dni':
+        start_day = today - timedelta(days=rozsah_dni - 1)
+        bucket_keys = [start_day + timedelta(days=i) for i in range(rozsah_dni)]
+        bucket_labels = [day.strftime('%d.%m.') for day in bucket_keys]
+        range_start_dt = timezone.make_aware(datetime.combine(start_day, datetime.min.time()))
+    elif interval == 'tyzdne':
+        pocet_tyzdnov = max(1, (rozsah_dni + 6) // 7)
+        current_week_start = today - timedelta(days=today.weekday())
+        first_week_start = current_week_start - timedelta(weeks=pocet_tyzdnov - 1)
+        bucket_keys = [first_week_start + timedelta(weeks=i) for i in range(pocet_tyzdnov)]
+        bucket_labels = [f"{week_start.strftime('%d.%m.')}" for week_start in bucket_keys]
+        range_start_dt = timezone.make_aware(datetime.combine(first_week_start, datetime.min.time()))
+    else:
+        pocet_mesiacov = max(1, (rozsah_dni + 29) // 30)
+        current_month_start = today.replace(day=1)
+        first_month_start = add_months(current_month_start, -(pocet_mesiacov - 1))
+        bucket_keys = [add_months(first_month_start, i) for i in range(pocet_mesiacov)]
+        bucket_labels = [month_start.strftime('%m/%Y') for month_start in bucket_keys]
+        range_start_dt = timezone.make_aware(datetime.combine(first_month_start, datetime.min.time()))
+
+    range_total_hours = max(1.0, (now - range_start_dt).total_seconds() / 3600)
+    machine_count = max(1, stroje.count())
+
+    trend_hours_by_bucket = {key: 0.0 for key in bucket_keys}
+    machine_hours = {stroj.nazov: 0.0 for stroj in stroje}
+
+    sessions = OperatorNaOperacii.objects.filter(
+        operacia__stroj__isnull=False,
+        cas_zaciatku__lte=now,
+    ).filter(
+        Q(cas_konca__isnull=True) | Q(cas_konca__gte=range_start_dt)
+    ).select_related('operacia__stroj')
+
+    for session in sessions:
+        start_dt = session.cas_zaciatku if session.cas_zaciatku > range_start_dt else range_start_dt
+        end_dt = session.cas_konca if session.cas_konca and session.cas_konca < now else now
+        if end_dt <= start_dt:
+            continue
+
+        worked_hours = (end_dt - start_dt).total_seconds() / 3600
+        stroj_nazov = session.operacia.stroj.nazov
+        machine_hours[stroj_nazov] = machine_hours.get(stroj_nazov, 0.0) + worked_hours
+
+        bucket_date = start_dt.date()
+        if interval == 'dni':
+            bucket_key = bucket_date
+        elif interval == 'tyzdne':
+            bucket_key = bucket_date - timedelta(days=bucket_date.weekday())
+        else:
+            bucket_key = bucket_date.replace(day=1)
+
+        if bucket_key in trend_hours_by_bucket:
+            trend_hours_by_bucket[bucket_key] += worked_hours
+
+    trend_utilization = []
+    for bucket_key in bucket_keys:
+        bucket_hours = trend_hours_by_bucket.get(bucket_key, 0.0)
+        if interval == 'dni':
+            capacity_hours = machine_count * 24
+        elif interval == 'tyzdne':
+            capacity_hours = machine_count * 168
+        else:
+            next_month = add_months(bucket_key, 1)
+            days_in_month = (next_month - bucket_key).days
+            capacity_hours = machine_count * days_in_month * 24
+
+        utilization_pct = (bucket_hours / capacity_hours) * 100 if capacity_hours > 0 else 0
+        trend_utilization.append(round(utilization_pct, 1))
+
+    machine_names = []
+    machine_utilization = []
+    for machine_name, hours in sorted(machine_hours.items(), key=lambda item: item[1], reverse=True):
+        machine_names.append(machine_name)
+        machine_utilization.append(round((hours / range_total_hours) * 100, 1))
+
     for s in stroje:
         operacie = OperaciaVyroby.objects.filter(
             stroj=s,
@@ -525,7 +617,27 @@ def zoznam_strojov(request):
         else:
             s.dni_po_termine = None
 
-    return render(request, "core/zoznam_strojov.html", {"stroje": stroje})
+    interval_label = {
+        'dni': 'Dni',
+        'tyzdne': 'Týždne',
+        'mesiace': 'Mesiace',
+    }[interval]
+
+    graf_data = {
+        'labels': bucket_labels,
+        'trend': trend_utilization,
+        'machine_labels': machine_names,
+        'machine_values': machine_utilization,
+        'interval_label': interval_label,
+        'range_label': f'Posledných {rozsah_dni} dní',
+    }
+
+    return render(request, "core/zoznam_strojov.html", {
+        "stroje": stroje,
+        "interval": interval,
+        "rozsah": rozsah,
+        "graf_data_json": json.dumps(graf_data),
+    })
 
 
 

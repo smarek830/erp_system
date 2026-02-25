@@ -11,6 +11,45 @@
     </a>
   </div>
 
+  <div class="card shadow-sm mb-4">
+    <div class="card-body">
+      <div class="d-flex flex-column flex-lg-row justify-content-between align-items-lg-center gap-3 mb-3">
+        <div>
+          <h5 class="mb-1">📈 Grafy vyťaženia</h5>
+          <small class="text-muted">Prehľad v čase a porovnanie strojov podľa zvoleného intervalu.</small>
+        </div>
+        <form method="get" class="d-flex align-items-center gap-2">
+          <label for="interval" class="form-label mb-0 small text-muted">Interval</label>
+          <select name="interval" id="interval" class="form-select form-select-sm" style="min-width: 140px;">
+            <option value="dni" {% if interval == 'dni' %}selected{% endif %}>Dni</option>
+            <option value="tyzdne" {% if interval == 'tyzdne' %}selected{% endif %}>Týždne</option>
+            <option value="mesiace" {% if interval == 'mesiace' %}selected{% endif %}>Mesiace</option>
+          </select>
+          <label for="rozsah" class="form-label mb-0 small text-muted">Rozsah</label>
+          <select name="rozsah" id="rozsah" class="form-select form-select-sm" style="min-width: 130px;">
+            <option value="7" {% if rozsah == '7' %}selected{% endif %}>7 dní</option>
+            <option value="30" {% if rozsah == '30' %}selected{% endif %}>30 dní</option>
+            <option value="90" {% if rozsah == '90' %}selected{% endif %}>90 dní</option>
+          </select>
+          <button type="submit" class="btn btn-outline-primary btn-sm">Filtrovať</button>
+        </form>
+      </div>
+
+      <div class="row g-3">
+        <div class="col-lg-7">
+          <div class="border rounded p-2">
+            <canvas id="utilizationTrendChart" height="150"></canvas>
+          </div>
+        </div>
+        <div class="col-lg-5">
+          <div class="border rounded p-2">
+            <canvas id="machineUtilizationChart" height="150"></canvas>
+          </div>
+        </div>
+      </div>
+    </div>
+  </div>
+
   <div class="table-responsive">
     <table class="table table-hover align-middle">
       <thead class="table-light">
@@ -122,4 +161,80 @@
     </table>
   </div>
 </div>
+{% endblock %}
+
+{% block extra_js %}
+<script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
+<script>
+  const chartData = JSON.parse('{{ graf_data_json|escapejs }}');
+
+  const trendCtx = document.getElementById('utilizationTrendChart');
+  if (trendCtx) {
+    new Chart(trendCtx, {
+      type: 'line',
+      data: {
+        labels: chartData.labels,
+        datasets: [{
+          label: `Vyťaženosť (%) · ${chartData.interval_label} · ${chartData.range_label}`,
+          data: chartData.trend,
+          borderColor: '#0d6efd',
+          backgroundColor: 'rgba(13, 110, 253, 0.12)',
+          fill: true,
+          tension: 0.25,
+          pointRadius: 2,
+        }]
+      },
+      options: {
+        responsive: true,
+        maintainAspectRatio: false,
+        plugins: {
+          legend: { display: true }
+        },
+        scales: {
+          y: {
+            beginAtZero: true,
+            max: 100,
+            ticks: {
+              callback: (value) => `${value}%`
+            }
+          }
+        }
+      }
+    });
+  }
+
+  const machineCtx = document.getElementById('machineUtilizationChart');
+  if (machineCtx) {
+    new Chart(machineCtx, {
+      type: 'bar',
+      data: {
+        labels: chartData.machine_labels,
+        datasets: [{
+          label: 'Vyťaženosť stroja (%)',
+          data: chartData.machine_values,
+          backgroundColor: 'rgba(25, 135, 84, 0.70)',
+          borderColor: '#198754',
+          borderWidth: 1,
+        }]
+      },
+      options: {
+        responsive: true,
+        maintainAspectRatio: false,
+        indexAxis: 'y',
+        plugins: {
+          legend: { display: false }
+        },
+        scales: {
+          x: {
+            beginAtZero: true,
+            max: 100,
+            ticks: {
+              callback: (value) => `${value}%`
+            }
+          }
+        }
+      }
+    });
+  }
+</script>
 {% endblock %}
