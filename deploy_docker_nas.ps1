@@ -56,10 +56,13 @@ $content | ssh ${NAS_USER}@${NAS_IP} "cat > $NAS_PATH/data_docker.json"
 Write-Host "OK - Fixtures prenesene" -ForegroundColor Green
 
 # ===================================================================
-# Krok 6: Docker Compose Build & Deploy
+# Krok 6: Backup DB + Docker Compose Build & Deploy
 # ===================================================================
 Write-Host ""
-Write-Host "[6/6] Docker build a spustenie..." -ForegroundColor Yellow
+Write-Host "[6/6] Backup DB, Docker build a spustenie..." -ForegroundColor Yellow
+Write-Host "  -> Backup SQLite databazy..." -ForegroundColor Gray
+ssh ${NAS_USER}@${NAS_IP} "cd $NAS_PATH && docker-compose exec -T web sh -c 'mkdir -p /data/backups && if [ -f /data/db.sqlite3 ]; then cp /data/db.sqlite3 /data/backups/db_`$(date +%Y%m%d_%H%M%S).sqlite3 && echo Backup hotovy; else echo Databaza este neexistuje; fi' || true"
+
 Write-Host "  -> Zastavenie starych kontajnerov..." -ForegroundColor Gray
 ssh ${NAS_USER}@${NAS_IP} "cd $NAS_PATH && docker-compose down 2>/dev/null || true"
 
@@ -81,6 +84,7 @@ ssh ${NAS_USER}@${NAS_IP} "cd $NAS_PATH && docker-compose ps"
 Write-Host ""
 Write-Host "============================================================" -ForegroundColor Green
 Write-Host "  OK - Docker deployment dokonceny!" -ForegroundColor Green
+Write-Host "  -> Backupy DB: /data/backups (volume erp_db)" -ForegroundColor Green
 Write-Host "  -> Aplikacia: http://${NAS_IP}:8000" -ForegroundColor Green
 Write-Host "  -> Admin: http://${NAS_IP}:8000/admin/login/" -ForegroundColor Green
 Write-Host ""
