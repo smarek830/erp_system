@@ -16,6 +16,7 @@ from django.views.decorators.http import require_POST
 from django.utils import timezone
 from django.template.loader import render_to_string
 from django.db.models import Q, Sum, Count, F  # ← DÔLEŽITÉ: F je tu!
+from django.db.models.functions import TruncDate
 import json
 from .pdf_generator import generate_sprievodka_pdf
 from datetime import datetime, timedelta
@@ -340,6 +341,114 @@ def home(request):
         'material_pod_minimum': material_pod_minimum, 'dnes': dnes,
     })
 
+
+@login_required
+@permission_required("core.view_kontrolakvality", raise_exception=True)
+def kvalita_dashboard(request):
+    """Manažérske vyhodnotenie kvality výroby."""
+    dnes = timezone.now().date()
+    default_od = dnes - timedelta(days=30)
+
+    datum_od = request.GET.get('od') or default_od.isoformat()
+    datum_do = request.GET.get('do') or dnes.isoformat()
+    typ_kontroly = request.GET.get('typ', '')
+    operator_id = request.GET.get('operator', '')
+
+    kontroly = KontrolaKvality.objects.select_related('objednavka', 'operator').order_by('-cas_kontroly')
+
+    try:
+        od_date = datetime.strptime(datum_od, '%Y-%m-%d').date()
+        kontroly = kontroly.filter(cas_kontroly__date__gte=od_date)
+    except ValueError:
+        od_date = default_od
+        kontroly = kontroly.filter(cas_kontroly__date__gte=od_date)
+
+    try:
+        do_date = datetime.strptime(datum_do, '%Y-%m-%d').date()
+        kontroly = kontroly.filter(cas_kontroly__date__lte=do_date)
+    except ValueError:
+        do_date = dnes
+        kontroly = kontroly.filter(cas_kontroly__date__lte=do_date)
+
+    if typ_kontroly in {'PRIEBEZNA', 'FINALNA'}:
+        kontroly = kontroly.filter(typ_kontroly=typ_kontroly)
+
+    if operator_id.isdigit():
+        kontroly = kontroly.filter(operator_id=int(operator_id))
+
+    suma = kontroly.aggregate(
+        ok_sum=Sum('pocet_ok_kusov'),
+        nok_sum=Sum('pocet_nok_kusov'),
+        nok_zaznamy=Count('id', filter=Q(vysledok_ok=False)),
+    )
+    ok_sum = suma['ok_sum'] or 0
+    nok_sum = suma['nok_sum'] or 0
+    spolu_kusy = ok_sum + nok_sum
+    nok_percento = round((nok_sum / spolu_kusy) * 100, 2) if spolu_kusy else 0
+
+    top_nok_zakazky = list(
+        kontroly.values(
+            'objednavka__id',
+            'objednavka__cislo_objednavky',
+            'objednavka__zakaznik',
+        )
+        .annotate(
+            nok_sum=Sum('pocet_nok_kusov'),
+            ok_sum=Sum('pocet_ok_kusov'),
+            zaznamy=Count('id'),
+        )
+        .order_by('-nok_sum', '-zaznamy')[:5]
+    )
+
+    trend_data = []
+    trend_qs = (
+        kontroly.annotate(den=F('pocet_ok_kusov') + F('pocet_nok_kusov'))
+        .annotate(den_datum=TruncDate('cas_kontroly'))
+        .values('den_datum')
+        .annotate(
+            ok_sum=Sum('pocet_ok_kusov'),
+            nok_sum=Sum('pocet_nok_kusov'),
+            spolu=Sum('den'),
+        )
+        .order_by('den_datum')
+    )
+    for row in trend_qs:
+        den_spolu = row['spolu'] or 0
+        trend_data.append({
+            'datum': row['den_datum'],
+            'ok_sum': row['ok_sum'] or 0,
+            'nok_sum': row['nok_sum'] or 0,
+            'nok_percento': round(((row['nok_sum'] or 0) / den_spolu) * 100, 2) if den_spolu else 0,
+        })
+
+    operatori = (
+        KontrolaKvality.objects.exclude(operator__isnull=True)
+        .values('operator__id', 'operator__username')
+        .distinct()
+        .order_by('operator__username')
+    )
+
+    context = {
+        'kontroly': kontroly[:100],
+        'operatori': operatori,
+        'top_nok_zakazky': top_nok_zakazky,
+        'trend_data': trend_data,
+        'filtre': {
+            'od': od_date.isoformat(),
+            'do': do_date.isoformat(),
+            'typ': typ_kontroly,
+            'operator': operator_id,
+        },
+        'kpi': {
+            'pocet_kontrol': kontroly.count(),
+            'ok_kusy': ok_sum,
+            'nok_kusy': nok_sum,
+            'nok_zaznamy': suma['nok_zaznamy'] or 0,
+            'nok_percento': nok_percento,
+        },
+    }
+    return render(request, 'core/kvalita_dashboard.html', context)
+
 @login_required
 @permission_required("core.view_stroj", raise_exception=True)
 def zoznam_strojov(request):
@@ -447,12 +556,18 @@ def operator_zakazka_detail(request, pk):
                     operacia.operator = request.user
                     operacia.save()
                     
-                    # Vytvor záznam operátora
-                    OperatorNaOperacii.objects.create(
+                    # Vytvor záznam operátora len ak neexistuje otvorený
+                    otvoreny = OperatorNaOperacii.objects.filter(
                         operacia=operacia,
                         operator=request.user,
-                        cas_zaciatku=timezone.now()
-                    )
+                        cas_konca__isnull=True
+                    ).first()
+                    if not otvoreny:
+                        OperatorNaOperacii.objects.create(
+                            operacia=operacia,
+                            operator=request.user,
+                            cas_zaciatku=timezone.now()
+                        )
                     
                     dostupne = operacia.get_dostupne_kusy_na_vstupe()
                     messages.success(
@@ -483,12 +598,18 @@ def operator_zakazka_detail(request, pk):
                     operacia.stav = 'vyroba'
                     operacia.save()
                     
-                    # Vytvor nový záznam operátora (pokračovanie)
-                    OperatorNaOperacii.objects.create(
+                    # Vytvor nový záznam operátora len ak neexistuje otvorený
+                    otvoreny = OperatorNaOperacii.objects.filter(
                         operacia=operacia,
                         operator=request.user,
-                        cas_zaciatku=timezone.now()
-                    )
+                        cas_konca__isnull=True
+                    ).first()
+                    if not otvoreny:
+                        OperatorNaOperacii.objects.create(
+                            operacia=operacia,
+                            operator=request.user,
+                            cas_zaciatku=timezone.now()
+                        )
                     
                     dostupne = operacia.get_dostupne_kusy_na_vstupe()
                     messages.success(
@@ -569,6 +690,9 @@ def operator_zakazka_detail(request, pk):
         op.dostupne_kusy = op.get_dostupne_kusy_na_vstupe()
         op.max_kusy = op.get_max_vyrobitelne_kusy()
         op.operatori_list = op.operatori.all()
+        op.operatori_unikatni = list(dict.fromkeys(
+            op.operatori.select_related('operator').values_list('operator__username', flat=True)
+        ))
         op.moze_zacat_teraz = op.moze_zacat()
         # moze_pokracovat_teraz je @property v modele, nemožno priraďovať
     
@@ -616,6 +740,18 @@ def start_operation(request, objednavka_pk, operacia_pk):
         operator=request.user,
         typ_udalosti='START'
     )
+
+    otvoreny = OperatorNaOperacii.objects.filter(
+        operacia=operacia_vyroby,
+        operator=request.user,
+        cas_konca__isnull=True
+    ).first()
+    if not otvoreny:
+        OperatorNaOperacii.objects.create(
+            operacia=operacia_vyroby,
+            operator=request.user,
+            cas_zaciatku=timezone.now()
+        )
     
     # Priradenie operátora k operácii
     operacia_vyroby.operator = request.user
@@ -656,6 +792,14 @@ def pause_operation(request, objednavka_pk, operacia_pk):
     
     operacia_vyroby.stav = 'pozastavena'
     operacia_vyroby.save()
+
+    operator_zaznam = operacia_vyroby.operatori.filter(
+        operator=request.user,
+        cas_konca__isnull=True
+    ).first()
+    if operator_zaznam:
+        operator_zaznam.cas_konca = timezone.now()
+        operator_zaznam.save()
     
     objednavka.stav = 'pozastavene'
     objednavka.save()
@@ -686,6 +830,14 @@ def end_operation(request, objednavka_pk, operacia_pk):
     operacia_vyroby.stav = 'hotova'
     operacia_vyroby.datum_ukoncenia = timezone.now()
     operacia_vyroby.save()
+
+    operator_zaznam = operacia_vyroby.operatori.filter(
+        operator=request.user,
+        cas_konca__isnull=True
+    ).first()
+    if operator_zaznam:
+        operator_zaznam.cas_konca = timezone.now()
+        operator_zaznam.save()
     
     return JsonResponse({'status': 'ok', 'message': f'Operácia {operacia_vyroby.nazov_operacie} ukončená'})
 

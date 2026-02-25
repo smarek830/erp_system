@@ -1,0 +1,215 @@
+{% extends 'core/base.html' %}
+
+{% block content %}
+<div class="container py-4">
+    <div class="d-flex justify-content-between align-items-center mb-4">
+        <div>
+            <h1 class="h3 mb-0">🔎 Vyhodnotenie kvality</h1>
+            <small class="text-muted">MVP prehľad NOK/OK a trendov kvality</small>
+        </div>
+        <a href="{% url 'home' %}" class="btn btn-outline-secondary">⬅️ Dashboard</a>
+    </div>
+
+    <div class="card shadow-sm mb-4">
+        <div class="card-body">
+            <form method="get" class="row g-2 align-items-end">
+                <div class="col-md-3">
+                    <label class="form-label">Od</label>
+                    <input type="date" name="od" value="{{ filtre.od }}" class="form-control">
+                </div>
+                <div class="col-md-3">
+                    <label class="form-label">Do</label>
+                    <input type="date" name="do" value="{{ filtre.do }}" class="form-control">
+                </div>
+                <div class="col-md-2">
+                    <label class="form-label">Typ kontroly</label>
+                    <select name="typ" class="form-select">
+                        <option value="">Všetky</option>
+                        <option value="PRIEBEZNA" {% if filtre.typ == 'PRIEBEZNA' %}selected{% endif %}>🔬 Priebežná</option>
+                        <option value="FINALNA" {% if filtre.typ == 'FINALNA' %}selected{% endif %}>📦 Finálna</option>
+                    </select>
+                </div>
+                <div class="col-md-2">
+                    <label class="form-label">Operátor</label>
+                    <select name="operator" class="form-select">
+                        <option value="">Všetci</option>
+                        {% for op in operatori %}
+                            <option value="{{ op.operator__id }}" {% if filtre.operator == op.operator__id|stringformat:'s' %}selected{% endif %}>
+                                {{ op.operator__username }}
+                            </option>
+                        {% endfor %}
+                    </select>
+                </div>
+                <div class="col-md-2 d-grid">
+                    <button class="btn btn-primary">Filtrovať</button>
+                </div>
+            </form>
+        </div>
+    </div>
+
+    <div class="row g-3 mb-4">
+        <div class="col-md-3 col-sm-6">
+            <div class="card border-primary shadow-sm">
+                <div class="card-body">
+                    <p class="text-muted mb-1 small">Počet kontrol</p>
+                    <h3 class="mb-0 text-primary">{{ kpi.pocet_kontrol }}</h3>
+                </div>
+            </div>
+        </div>
+        <div class="col-md-3 col-sm-6">
+            <div class="card border-success shadow-sm">
+                <div class="card-body">
+                    <p class="text-muted mb-1 small">OK kusy</p>
+                    <h3 class="mb-0 text-success">{{ kpi.ok_kusy }}</h3>
+                </div>
+            </div>
+        </div>
+        <div class="col-md-3 col-sm-6">
+            <div class="card border-danger shadow-sm">
+                <div class="card-body">
+                    <p class="text-muted mb-1 small">NOK kusy</p>
+                    <h3 class="mb-0 text-danger">{{ kpi.nok_kusy }}</h3>
+                </div>
+            </div>
+        </div>
+        <div class="col-md-3 col-sm-6">
+            <div class="card {% if kpi.nok_percento > 3 %}border-danger{% else %}border-warning{% endif %} shadow-sm">
+                <div class="card-body">
+                    <p class="text-muted mb-1 small">NOK %</p>
+                    <h3 class="mb-0 {% if kpi.nok_percento > 3 %}text-danger{% else %}text-warning{% endif %}">{{ kpi.nok_percento }}%</h3>
+                    <small class="text-muted">NOK záznamy: {{ kpi.nok_zaznamy }}</small>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <div class="row g-3 mb-4">
+        <div class="col-lg-6">
+            <div class="card shadow-sm h-100">
+                <div class="card-header bg-light">
+                    <strong>📉 Denný trend kvality</strong>
+                </div>
+                <div class="card-body p-0">
+                    <div class="table-responsive">
+                        <table class="table table-sm table-hover mb-0">
+                            <thead class="table-light">
+                                <tr>
+                                    <th>Dátum</th>
+                                    <th class="text-end">OK</th>
+                                    <th class="text-end">NOK</th>
+                                    <th class="text-end">NOK %</th>
+                                </tr>
+                            </thead>
+                            <tbody>
+                                {% for den in trend_data %}
+                                <tr>
+                                    <td>{{ den.datum|date:'d.m.Y' }}</td>
+                                    <td class="text-end">{{ den.ok_sum }}</td>
+                                    <td class="text-end">{{ den.nok_sum }}</td>
+                                    <td class="text-end {% if den.nok_percento > 3 %}text-danger fw-bold{% endif %}">{{ den.nok_percento }}%</td>
+                                </tr>
+                                {% empty %}
+                                <tr>
+                                    <td colspan="4" class="text-center py-3 text-muted">Žiadne dáta pre zadaný filter.</td>
+                                </tr>
+                                {% endfor %}
+                            </tbody>
+                        </table>
+                    </div>
+                </div>
+            </div>
+        </div>
+
+        <div class="col-lg-6">
+            <div class="card shadow-sm h-100">
+                <div class="card-header bg-light">
+                    <strong>🚨 TOP zakázky podľa NOK</strong>
+                </div>
+                <div class="card-body p-0">
+                    <div class="table-responsive">
+                        <table class="table table-sm table-hover mb-0">
+                            <thead class="table-light">
+                                <tr>
+                                    <th>Zakázka</th>
+                                    <th>Zákazník</th>
+                                    <th class="text-end">NOK</th>
+                                    <th class="text-end">Záznamy</th>
+                                </tr>
+                            </thead>
+                            <tbody>
+                                {% for item in top_nok_zakazky %}
+                                <tr>
+                                    <td>
+                                        <a href="{% url 'detail_zakazky' pk=item.objednavka__id %}" class="text-decoration-none fw-bold">
+                                            #{{ item.objednavka__cislo_objednavky }}
+                                        </a>
+                                    </td>
+                                    <td>{{ item.objednavka__zakaznik }}</td>
+                                    <td class="text-end text-danger fw-bold">{{ item.nok_sum }}</td>
+                                    <td class="text-end">{{ item.zaznamy }}</td>
+                                </tr>
+                                {% empty %}
+                                <tr>
+                                    <td colspan="4" class="text-center py-3 text-muted">Žiadne NOK dáta.</td>
+                                </tr>
+                                {% endfor %}
+                            </tbody>
+                        </table>
+                    </div>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <div class="card shadow-sm">
+        <div class="card-header bg-light d-flex justify-content-between align-items-center">
+            <strong>🧾 Posledné kontroly</strong>
+            <small class="text-muted">Zobrazených max 100 záznamov</small>
+        </div>
+        <div class="card-body p-0">
+            <div class="table-responsive">
+                <table class="table table-hover mb-0">
+                    <thead class="table-light">
+                        <tr>
+                            <th>Čas</th>
+                            <th>Zakázka</th>
+                            <th>Typ</th>
+                            <th>Operátor</th>
+                            <th class="text-end">OK</th>
+                            <th class="text-end">NOK</th>
+                            <th>Výsledok</th>
+                        </tr>
+                    </thead>
+                    <tbody>
+                        {% for k in kontroly %}
+                        <tr>
+                            <td><small>{{ k.cas_kontroly|date:'d.m.Y H:i' }}</small></td>
+                            <td>
+                                <a href="{% url 'detail_zakazky' pk=k.objednavka.id %}" class="text-decoration-none">
+                                    #{{ k.objednavka.cislo_objednavky }}
+                                </a>
+                            </td>
+                            <td>{{ k.get_typ_kontroly_display }}</td>
+                            <td>{{ k.operator.username|default:'-' }}</td>
+                            <td class="text-end text-success">{{ k.pocet_ok_kusov }}</td>
+                            <td class="text-end {% if k.pocet_nok_kusov > 0 %}text-danger fw-bold{% endif %}">{{ k.pocet_nok_kusov }}</td>
+                            <td>
+                                {% if k.vysledok_ok %}
+                                    <span class="badge bg-success">✅ OK</span>
+                                {% else %}
+                                    <span class="badge bg-danger">❌ NOK</span>
+                                {% endif %}
+                            </td>
+                        </tr>
+                        {% empty %}
+                        <tr>
+                            <td colspan="7" class="text-center py-4 text-muted">Žiadne kontroly kvality pre zadaný filter.</td>
+                        </tr>
+                        {% endfor %}
+                    </tbody>
+                </table>
+            </div>
+        </div>
+    </div>
+</div>
+{% endblock %}

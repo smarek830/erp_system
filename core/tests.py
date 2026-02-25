@@ -3,6 +3,7 @@ from datetime import date, timedelta
 
 from django.test import TestCase, Client
 from django.contrib.auth.models import User
+from django.contrib.auth.models import Permission
 from django.utils import timezone
 
 from .models import (
@@ -214,3 +215,49 @@ class UlozKontrolaKvalityViewTest(TestCase):
         resp = c.post(self.url, data={'poznamka_kontroly': 'x'})
         data = resp.json()
         self.assertEqual(data['status'], 'error')
+
+
+class KvalitaDashboardViewTest(TestCase):
+    def setUp(self):
+        self.user = User.objects.create_user('manager', password='pass')
+        perm = Permission.objects.get(codename='view_kontrolakvality')
+        self.user.user_permissions.add(perm)
+
+        self.op = User.objects.create_user('operator_kvalita', password='pass')
+        self.produkt = _produkt('T-KVAL-001')
+        self.obj = _objednavka(produkt=self.produkt, mnozstvo=10)
+
+        KontrolaKvality.objects.create(
+            objednavka=self.obj,
+            operator=self.op,
+            typ_kontroly='PRIEBEZNA',
+            pocet_ok_kusov=8,
+            pocet_nok_kusov=2,
+            namerana_hodnota='OK/NOK test A',
+            vysledok_ok=False,
+        )
+        KontrolaKvality.objects.create(
+            objednavka=self.obj,
+            operator=self.op,
+            typ_kontroly='FINALNA',
+            pocet_ok_kusov=5,
+            pocet_nok_kusov=0,
+            namerana_hodnota='OK/NOK test B',
+            vysledok_ok=True,
+        )
+
+        self.client = Client()
+        self.client.force_login(self.user)
+
+    def test_dashboard_access(self):
+        resp = self.client.get('/kvalita/')
+        self.assertEqual(resp.status_code, 200)
+        self.assertEqual(resp.context['kpi']['pocet_kontrol'], 2)
+        self.assertEqual(resp.context['kpi']['ok_kusy'], 13)
+        self.assertEqual(resp.context['kpi']['nok_kusy'], 2)
+
+    def test_dashboard_filter_typ(self):
+        resp = self.client.get('/kvalita/', {'typ': 'FINALNA'})
+        self.assertEqual(resp.status_code, 200)
+        self.assertEqual(resp.context['kpi']['pocet_kontrol'], 1)
+        self.assertEqual(resp.context['kpi']['nok_kusy'], 0)

@@ -24,8 +24,12 @@
           <h3>{{ zakazka.mnozstvo }} ks</h3>
         </div>
         <div class="col-6 col-md-2">
-          <h5 class="text-muted mb-1">OK kusy</h5>
+          <h5 class="text-muted mb-1">
+            OK finálne
+            <span class="ms-1" title="Počet OK kusov z poslednej operácie. V medzioperáciách môže byť viac kusov, ktoré ešte neprešli celým procesom.">ℹ️</span>
+          </h5>
           <h3 class="text-success">{{ zakazka.celkom_ok_kusy }} ks</h3>
+          <small class="text-muted">z poslednej operácie</small>
         </div>
         <div class="col-6 col-md-2">
           <h5 class="text-muted mb-1">NOK kusy</h5>
@@ -36,8 +40,12 @@
           <h3 class="text-warning">{{ zakazka.zostava_vyroba }} ks</h3>
         </div>
         <div class="col-6 col-md-2">
-          <h5 class="text-muted mb-1">Celkom vyrobiť</h5>
+          <h5 class="text-muted mb-1">
+            Celkom vyrobiť
+            <span class="ms-1" title="Požadované kusy + priebežne vzniknuté NOK kusy (kompenzácia), aby sa dosiahol cieľový počet OK kusov.">ℹ️</span>
+          </h5>
           <h3 class="text-info">{{ zakazka.potrebne_kusy_celkom }} ks</h3>
+          <small class="text-muted">požadované + kompenzácia NOK</small>
         </div>
         <div class="col-6 col-md-2">
           <h5 class="text-muted mb-1">Termín</h5>
@@ -77,11 +85,11 @@
               <td><strong>{{ op.poradie }}.</strong></td>
               <td>
                 <div>{{ op.nazov_operacie }}</div>
-                {% if op.operatori_list %}
+                {% if op.operatori_unikatni %}
                   <small class="text-muted">
                     Operátori: 
-                    {% for opr in op.operatori_list %}
-                      {{ opr.operator.username }}{% if not forloop.last %}, {% endif %}
+                    {% for meno in op.operatori_unikatni %}
+                      {{ meno }}{% if not forloop.last %}, {% endif %}
                     {% endfor %}
                   </small>
                 {% endif %}
@@ -227,12 +235,12 @@
             </span>
           </div>
 
-          {% if op.operatori_list %}
+          {% if op.operatori_unikatni %}
           <div class="mb-2">
             <small class="text-muted">
               Operátori:
-              {% for opr in op.operatori_list %}
-                {{ opr.operator.username }}{% if not forloop.last %}, {% endif %}
+              {% for meno in op.operatori_unikatni %}
+                {{ meno }}{% if not forloop.last %}, {% endif %}
               {% endfor %}
             </small>
           </div>
