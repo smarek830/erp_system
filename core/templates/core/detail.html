@@ -121,7 +121,7 @@
         </div>
         
         <div class="mt-3">
-            <a href="/admin/core/produkt/{{ produkt.pk }}/change/" class="btn btn-warning w-100">✏️ Upraviť produkt</a>
+            <a href="{% url 'upravit_produkt' produkt.pk %}" class="btn btn-warning w-100">✏️ Upraviť produkt</a>
         </div>
     </div>
 </div>

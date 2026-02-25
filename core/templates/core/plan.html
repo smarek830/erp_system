@@ -226,7 +226,7 @@
                                         <a href="{% url 'detail_zakazky' pk=obj.pk %}" 
                                            class="btn btn-outline-info btn-sm">👁️</a>
                                                      {% if perms.core.change_objednavka %}
-                                                          <a href="/admin/core/objednavka/{{ obj.pk }}/change/" 
+                                                          <a href="{% url 'upravit_objednavku' obj.pk %}" 
                                                               class="btn btn-outline-dark btn-sm">✏️</a>
                                         {% endif %}
                                     </div>
@@ -413,7 +413,7 @@
                     👁️ Detail
                 </a>
                 {% if perms.core.change_objednavka %}
-                    <a href="/admin/core/objednavka/{{ obj.pk }}/change/" class="btn btn-outline-secondary">
+                    <a href="{% url 'upravit_objednavku' obj.pk %}" class="btn btn-outline-secondary">
                         ✏️
                     </a>
                 {% endif %}
