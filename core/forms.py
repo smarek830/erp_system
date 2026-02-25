@@ -224,9 +224,9 @@ class ProduktForm(forms.ModelForm):
                 'class': 'form-control',
                 'placeholder': 'Číslo výkresu'
             }),
-            'index': forms.NumberInput(attrs={
+            'index': forms.TextInput(attrs={
                 'class': 'form-control',
-                'min': '0'
+                'placeholder': 'Napr. 0, A, B2'
             }),
             'material': forms.TextInput(attrs={
                 'class': 'form-control',

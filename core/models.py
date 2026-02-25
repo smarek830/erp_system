@@ -118,7 +118,7 @@ class Produkt(models.Model):
     nazov = models.CharField(max_length=200, verbose_name="Názov produktu")
     cislo_dielu = models.CharField(max_length=50, unique=True, verbose_name="Číslo dielu")
     cislo_vykresu = models.CharField(max_length=50, blank=True, null=True, verbose_name="Číslo výkresu")
-    index = models.IntegerField(default=0, verbose_name="Index zmeny")
+    index = models.CharField(max_length=20, default='0', verbose_name="Index zmeny")
 
     material = models.CharField(max_length=100, blank=True, verbose_name="Materiál")
     rozmer_polotovaru = models.CharField(max_length=100, blank=True, verbose_name="Rozmer polotovaru")
