@@ -11,7 +11,7 @@
         </div>
         <div class="btn-group" role="group">
             <a href="{% url 'sklad_materialu' %}" class="btn btn-outline-primary">🏭 Sklad materiálu</a>
-            <a href="/admin/core/skladhotovychdielov/add/" class="btn btn-success">➕ Nový produkt na sklad</a>
+            <a href="{% url 'novy_sklad_hotovych_dielov' %}" class="btn btn-success">➕ Nový produkt na sklad</a>
         </div>
     </div>
 
@@ -123,11 +123,11 @@
                             </td>
                             <td class="text-end">
                                 <div class="btn-group" role="group">
-                                    <a href="/admin/core/prijemkahotovychdielov/add/?sklad={{ sklad.pk }}" 
+                                                <a href="{% url 'nova_prijemka' %}?sklad={{ sklad.pk }}" 
                                        class="btn btn-success btn-sm" title="Príjemka">➕</a>
-                                    <a href="/admin/core/vydajkahotovychdielov/add/?sklad={{ sklad.pk }}" 
+                                                <a href="{% url 'nova_vydajka' %}?sklad={{ sklad.pk }}" 
                                        class="btn btn-warning btn-sm" title="Výdajka">📤</a>
-                                    <a href="/admin/core/skladhotovychdielov/{{ sklad.pk }}/change/" 
+                                    <a href="{% url 'upravit_sklad_hotovych_dielov' sklad.pk %}" 
                                        class="btn btn-outline-primary btn-sm" title="Upraviť">✏️</a>
                                 </div>
                             </td>

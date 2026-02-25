@@ -11,7 +11,7 @@
         </div>
         <div class="btn-group" role="group">
             <a href="{% url 'sklad_hotovych_dielov' %}" class="btn btn-outline-primary">📦 Hotové diely</a>
-            <a href="/admin/core/material/add/" class="btn btn-success">➕ Nový materiál</a>
+            <a href="{% url 'novy_material' %}" class="btn btn-success">➕ Nový materiál</a>
         </div>
     </div>
 
@@ -127,11 +127,11 @@
                             </td>
                             <td class="text-end">
                                 <div class="btn-group" role="group">
-                                    <a href="/admin/core/prijemkanasklad/add/?material={{ material.pk }}" 
+                                                <a href="{% url 'nova_prijemka_materialu' %}?material={{ material.pk }}" 
                                        class="btn btn-success btn-sm" title="Príjemka">➕</a>
-                                    <a href="/admin/core/vydajkazoskladu/add/?material={{ material.pk }}" 
+                                                <a href="{% url 'nova_vydajka_materialu' %}?material={{ material.pk }}" 
                                        class="btn btn-warning btn-sm" title="Výdajka">📤</a>
-                                    <a href="/admin/core/material/{{ material.pk }}/change/" 
+                                    <a href="{% url 'upravit_material' material.pk %}" 
                                        class="btn btn-outline-primary btn-sm" title="Upraviť">✏️</a>
                                 </div>
                             </td>

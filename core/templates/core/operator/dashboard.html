@@ -1,62 +1,201 @@
 {% extends "core/base.html" %}
 
-{% block page_title %}🛠️ Môj Dashboard{% endblock %}
+{% block page_title %}🛠️ Operátorský panel{% endblock %}
+
+{% block extra_css %}
+<style>
+    .operator-profile-card {
+        border: 0;
+        background: linear-gradient(135deg, #0d6efd 0%, #0a58ca 100%);
+        color: #fff;
+    }
+    .operator-avatar {
+        width: 92px;
+        height: 92px;
+        object-fit: cover;
+        border-radius: 50%;
+        border: 3px solid rgba(255, 255, 255, 0.45);
+        background: #fff;
+    }
+    .kpi-card {
+        border: 0;
+        border-left: 4px solid #0d6efd;
+    }
+    .kpi-value {
+        font-size: 1.55rem;
+        font-weight: 700;
+        line-height: 1.1;
+    }
+</style>
+{% endblock %}
 
 {% block content %}
-<div class="container px-0 px-md-2 mt-2 mt-md-4">
-    <p>Prihlásený: <strong>{{ user.username }}</strong></p>
-    <div class="alert alert-info">🔄 Template verzia: 2024-02-22-NOVA</div>
-
-    <h2>📦 Moje rozpracované zakázky</h2>
-    {% if rozpracovane %}
-        <div class="list-group mb-4">
-            {% for obj in rozpracovane %}
-            <a href="{% url 'operator_zakazka_detail' obj.pk %}" class="list-group-item list-group-item-action">
-                <strong>#{{ obj.cislo_objednavky }}</strong> - {{ obj.produkt.nazov }} ({{ obj.mnozstvo }} ks)
-                <span class="badge bg-warning">{{ obj.get_stav_display }}</span>
-            </a>
-            {% endfor %}
-        </div>
-    {% else %}
-        <p class="text-muted">Žiadne rozpracované zakázky</p>
-    {% endif %}
-
-    <h2>🆕 Priradené zakázky</h2>
-    {% if nove_priradene %}
-        <div class="list-group mb-4">
-            {% for obj in nove_priradene %}
-            <a href="{% url 'operator_zakazka_detail' obj.pk %}" class="list-group-item list-group-item-action">
-                <strong>#{{ obj.cislo_objednavky }}</strong> - {{ obj.produkt.nazov }} ({{ obj.mnozstvo }} ks)
-                <small class="text-muted">Termín: {{ obj.datum_pozadovane }}</small>
-            </a>
-            {% endfor %}
-        </div>
-    {% else %}
-        <p class="text-muted">Žiadne priradené zakázky</p>
-    {% endif %}
-
-    <h2>📋 Dostupné nové zakázky</h2>
-    {% if nove_dostupne %}
-        <div class="list-group mb-4">
-            {% for obj in nove_dostupne %}
-            <div class="list-group-item">
-                <div class="d-flex flex-column flex-md-row justify-content-between align-items-start align-items-md-center gap-2">
-                    <div>
-                        <strong>#{{ obj.cislo_objednavky }}</strong> - {{ obj.produkt.nazov }} ({{ obj.mnozstvo }} ks)
-                        <small class="text-muted d-block">Termín: {{ obj.datum_pozadovane }}</small>
-                    </div>
-                    <div class="d-grid d-md-block w-100">
-                        <button class="btn btn-success btn-sm" onclick="prevziatZakazku({{ obj.pk }})">
-                            📥 Prevziať zakázku
-                        </button>
+<div class="container-fluid px-0 px-md-2">
+    <div class="card shadow-sm operator-profile-card mb-3">
+        <div class="card-body p-3 p-md-4">
+            <div class="d-flex flex-column flex-md-row align-items-center align-items-md-start gap-3">
+                <img src="{{ operator_avatar_url }}" alt="Foto operátora {{ operator_name }}" class="operator-avatar">
+                <div class="text-center text-md-start">
+                    <h4 class="mb-1">{{ operator_name }}</h4>
+                    <div class="small opacity-75 mb-2">👷 Operátor výroby · {{ user.username }}</div>
+                    <div class="d-flex flex-wrap gap-2 justify-content-center justify-content-md-start">
+                        <span class="badge bg-light text-dark">📦 Aktívne zakázky: {{ aktivne_zakazky }}</span>
+                        <span class="badge bg-light text-dark">✅ Dokončené: {{ dokoncene_zakazky }}</span>
+                        <span class="badge bg-light text-dark">🧾 Priradené: {{ priradene_cakajuce }}</span>
                     </div>
                 </div>
             </div>
-            {% endfor %}
         </div>
-    {% else %}
-        <p class="text-muted">Žiadne dostupné nové zakázky</p>
-    {% endif %}
+    </div>
+
+    <div class="row g-3 mb-4">
+        <div class="col-6 col-lg-3">
+            <div class="card kpi-card shadow-sm h-100">
+                <div class="card-body">
+                    <div class="text-muted small">⚡ Výkonnosť (30 dní)</div>
+                    <div class="kpi-value text-primary">{{ vykonnost_ks_den }} ks/deň</div>
+                </div>
+            </div>
+        </div>
+        <div class="col-6 col-lg-3">
+            <div class="card kpi-card shadow-sm h-100">
+                <div class="card-body">
+                    <div class="text-muted small">🧩 Vyrobené kusy</div>
+                    <div class="kpi-value">{{ vyrobene_spolu }}</div>
+                </div>
+            </div>
+        </div>
+        <div class="col-6 col-lg-3">
+            <div class="card kpi-card shadow-sm h-100">
+                <div class="card-body">
+                    <div class="text-muted small">🗑️ Zmetky</div>
+                    <div class="kpi-value text-danger">{{ nepodarky_spolu }}</div>
+                </div>
+            </div>
+        </div>
+        <div class="col-6 col-lg-3">
+            <div class="card kpi-card shadow-sm h-100">
+                <div class="card-body">
+                    <div class="text-muted small">📉 Zmetkovitosť</div>
+                    <div class="kpi-value {% if zmetkovitost_pct > 5 %}text-danger{% elif zmetkovitost_pct > 2 %}text-warning{% else %}text-success{% endif %}">
+                        {{ zmetkovitost_pct }} %
+                    </div>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <div class="row g-3 mb-4">
+        <div class="col-xl-8">
+            <div class="card shadow-sm h-100">
+                <div class="card-header bg-light d-flex justify-content-between align-items-center">
+                    <h5 class="mb-0">📦 Rozpracované zakázky</h5>
+                    <span class="badge bg-primary">{{ aktivne_zakazky }}</span>
+                </div>
+                <div class="card-body p-0">
+                    {% if rozpracovane %}
+                        <div class="list-group list-group-flush">
+                            {% for obj in rozpracovane %}
+                            <a href="{% url 'operator_zakazka_detail' obj.pk %}" class="list-group-item list-group-item-action py-3">
+                                <div class="d-flex justify-content-between gap-3 align-items-start">
+                                    <div>
+                                        <div class="fw-semibold">#{{ obj.cislo_objednavky }} · {{ obj.produkt.nazov }}</div>
+                                        <small class="text-muted">Plán: {{ obj.mnozstvo }} ks · OK finálne: {{ obj.celkom_ok_kusy }} ks</small>
+                                    </div>
+                                    <span class="badge bg-warning text-dark">{{ obj.get_stav_display }}</span>
+                                </div>
+                                <div class="progress mt-2" role="progressbar" aria-label="Progress" aria-valuenow="{{ obj.progress_pct }}" aria-valuemin="0" aria-valuemax="100">
+                                    <div class="progress-bar" style="width: {{ obj.progress_pct }}%">{{ obj.progress_pct }}%</div>
+                                </div>
+                            </a>
+                            {% endfor %}
+                        </div>
+                    {% else %}
+                        <div class="p-3 text-muted">Žiadne rozpracované zakázky.</div>
+                    {% endif %}
+                </div>
+            </div>
+        </div>
+
+        <div class="col-xl-4">
+            <div class="card shadow-sm h-100">
+                <div class="card-header bg-light">
+                    <h5 class="mb-0">🕒 Posledné aktivity</h5>
+                </div>
+                <div class="card-body p-0">
+                    {% if posledne_ukony %}
+                        <div class="list-group list-group-flush">
+                            {% for zaznam in posledne_ukony %}
+                            <div class="list-group-item py-2">
+                                <div class="small fw-semibold">{{ zaznam.get_typ_udalosti_display }}</div>
+                                <div class="small text-muted">#{{ zaznam.objednavka.cislo_objednavky }} · {{ zaznam.cas_zaznamu|date:"d.m.Y H:i" }}</div>
+                            </div>
+                            {% endfor %}
+                        </div>
+                    {% else %}
+                        <div class="p-3 text-muted">Zatiaľ bez aktivít.</div>
+                    {% endif %}
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <div class="row g-3">
+        <div class="col-lg-6">
+            <div class="card shadow-sm h-100">
+                <div class="card-header bg-light d-flex justify-content-between align-items-center">
+                    <h5 class="mb-0">🆕 Priradené zakázky</h5>
+                    <span class="badge bg-secondary">{{ priradene_cakajuce }}</span>
+                </div>
+                <div class="card-body p-0">
+                    {% if nove_priradene %}
+                        <div class="list-group list-group-flush">
+                            {% for obj in nove_priradene %}
+                            <a href="{% url 'operator_zakazka_detail' obj.pk %}" class="list-group-item list-group-item-action py-3">
+                                <div class="fw-semibold">#{{ obj.cislo_objednavky }} · {{ obj.produkt.nazov }}</div>
+                                <small class="text-muted">{{ obj.mnozstvo }} ks · Termín: {{ obj.datum_pozadovane|date:"d.m.Y" }}</small>
+                            </a>
+                            {% endfor %}
+                        </div>
+                    {% else %}
+                        <div class="p-3 text-muted">Žiadne priradené zakázky.</div>
+                    {% endif %}
+                </div>
+            </div>
+        </div>
+
+        <div class="col-lg-6">
+            <div class="card shadow-sm h-100">
+                <div class="card-header bg-light d-flex justify-content-between align-items-center">
+                    <h5 class="mb-0">📋 Dostupné nové zakázky</h5>
+                    <span class="badge bg-secondary">{{ dostupne_nove }}</span>
+                </div>
+                <div class="card-body p-0">
+                    {% if nove_dostupne %}
+                        <div class="list-group list-group-flush">
+                            {% for obj in nove_dostupne %}
+                            <div class="list-group-item py-3">
+                                <div class="d-flex flex-column flex-md-row justify-content-between align-items-start align-items-md-center gap-2">
+                                    <div>
+                                        <div class="fw-semibold">#{{ obj.cislo_objednavky }} · {{ obj.produkt.nazov }}</div>
+                                        <small class="text-muted">{{ obj.mnozstvo }} ks · Termín: {{ obj.datum_pozadovane|date:"d.m.Y" }}</small>
+                                    </div>
+                                    <div class="d-grid d-md-block w-100 w-md-auto">
+                                        <button class="btn btn-success btn-sm" onclick="prevziatZakazku({{ obj.pk }})">
+                                            📥 Prevziať zakázku
+                                        </button>
+                                    </div>
+                                </div>
+                            </div>
+                            {% endfor %}
+                        </div>
+                    {% else %}
+                        <div class="p-3 text-muted">Žiadne dostupné nové zakázky.</div>
+                    {% endif %}
+                </div>
+            </div>
+        </div>
+    </div>
 </div>
 
 <script>

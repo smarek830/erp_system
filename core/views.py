@@ -18,6 +18,7 @@ from django.template.loader import render_to_string
 from django.db.models import Q, Sum, Count, F, Prefetch  # ← DÔLEŽITÉ: F je tu!
 from django.db.models.functions import TruncDate
 import json
+import hashlib
 from .pdf_generator import generate_sprievodka_pdf
 from datetime import datetime, timedelta
 import openpyxl
@@ -530,31 +531,83 @@ def zoznam_strojov(request):
 
 @login_required
 def operator_dashboard(request):
+    now = timezone.now()
+    last_30_days = now - timedelta(days=30)
+
     rozpracovane = Objednavka.objects.filter(
         stav='vyroba', zaznamy__operator=request.user,
         zaznamy__typ_udalosti='START'
-    ).distinct()
+    ).select_related('produkt').distinct()
+
+    for obj in rozpracovane:
+        total = obj.mnozstvo or 0
+        ok_kusy = obj.celkom_ok_kusy or 0
+        obj.progress_pct = int(round((ok_kusy / total) * 100)) if total > 0 else 0
+
     nove_priradene = Objednavka.objects.filter(
         stav='nova', priradeni_operatori=request.user
-    ).order_by('datum_pozadovane')
+    ).select_related('produkt').order_by('datum_pozadovane')
+
     nove_dostupne = Objednavka.objects.filter(
         stav='nova'
     ).exclude(
         priradeni_operatori__isnull=False
-    ).order_by('datum_pozadovane')
-    
-    # DEBUG output
-    print(f"DEBUG operator_dashboard:")
-    print(f"  - rozpracovane: {rozpracovane.count()}")
-    print(f"  - nove_priradene: {nove_priradene.count()}")
-    print(f"  - nove_dostupne: {nove_dostupne.count()}")
-    for obj in nove_dostupne[:3]:
-        print(f"    - #{obj.cislo_objednavky}")
-    
+    ).select_related('produkt').order_by('datum_pozadovane')
+
+    vyrobene_spolu = OperatorNaOperacii.objects.filter(
+        operator=request.user
+    ).aggregate(total=Sum('vyrobene_kusy'))['total'] or 0
+
+    vyrobene_30 = OperatorNaOperacii.objects.filter(
+        operator=request.user,
+        cas_zaciatku__gte=last_30_days
+    ).aggregate(total=Sum('vyrobene_kusy'))['total'] or 0
+
+    nepodarky_spolu = HlasenieVyroby.objects.filter(
+        operator=request.user,
+        typ_problemu='NEPODAROK'
+    ).aggregate(total=Sum('pocet_kusov_nepodarkov'))['total'] or 0
+
+    celkove_kusy = vyrobene_spolu + nepodarky_spolu
+    zmetkovitost_pct = round((nepodarky_spolu / celkove_kusy) * 100, 1) if celkove_kusy > 0 else 0
+    vykonnost_ks_den = round(vyrobene_30 / 30, 1)
+
+    dokoncene_zakazky = Objednavka.objects.filter(
+        stav='hotovo',
+        zaznamy__operator=request.user,
+        zaznamy__typ_udalosti='STOP'
+    ).distinct().count()
+
+    posledne_ukony = VyrobnyZaznam.objects.filter(
+        operator=request.user
+    ).select_related('objednavka').order_by('-cas_zaznamu')[:8]
+
+    operator_name = request.user.get_full_name().strip() or request.user.username
+    initials = ''.join(part[0] for part in operator_name.split()[:2]).upper() or request.user.username[:2].upper()
+    email = (request.user.email or '').strip().lower()
+    avatar_hash = hashlib.md5(email.encode('utf-8')).hexdigest() if email else None
+    operator_avatar_url = (
+        f"https://www.gravatar.com/avatar/{avatar_hash}?d=identicon&s=200"
+        if avatar_hash
+        else f"https://ui-avatars.com/api/?name={initials}&background=0d6efd&color=fff&size=200"
+    )
+
     return render(request, 'core/operator/dashboard.html', {
-        'rozpracovane': rozpracovane, 
+        'rozpracovane': rozpracovane,
         'nove_priradene': nove_priradene,
         'nove_dostupne': nove_dostupne,
+        'operator_name': operator_name,
+        'operator_initials': initials,
+        'operator_avatar_url': operator_avatar_url,
+        'vyrobene_spolu': vyrobene_spolu,
+        'nepodarky_spolu': nepodarky_spolu,
+        'zmetkovitost_pct': zmetkovitost_pct,
+        'vykonnost_ks_den': vykonnost_ks_den,
+        'dokoncene_zakazky': dokoncene_zakazky,
+        'aktivne_zakazky': rozpracovane.count(),
+        'priradene_cakajuce': nove_priradene.count(),
+        'dostupne_nove': nove_dostupne.count(),
+        'posledne_ukony': posledne_ukony,
     })
 
 @login_required
@@ -1493,6 +1546,110 @@ def upravit_produkt(request, pk):
     return render(request, 'core/novy_produkt.html', context)
 
 
+@login_required
+@permission_required("core.add_material", raise_exception=True)
+def novy_material(request):
+    """Vytvorenie nového materiálu"""
+    from .forms import MaterialForm
+    from django.contrib import messages
+
+    if request.method == 'POST':
+        form = MaterialForm(request.POST)
+        if form.is_valid():
+            material = form.save()
+            messages.success(request, f'✅ Materiál "{material.nazov}" bol vytvorený!')
+            return redirect('sklad_materialu')
+    else:
+        form = MaterialForm()
+
+    context = {
+        'form': form,
+        'title': 'Nový materiál',
+        'submit_text': 'Vytvoriť materiál',
+    }
+
+    return render(request, 'core/form_universal.html', context)
+
+
+@login_required
+@permission_required("core.change_material", raise_exception=True)
+def upravit_material(request, pk):
+    """Úprava existujúceho materiálu"""
+    from .forms import MaterialForm
+    from django.contrib import messages
+
+    material = get_object_or_404(Material, pk=pk)
+
+    if request.method == 'POST':
+        form = MaterialForm(request.POST, instance=material)
+        if form.is_valid():
+            form.save()
+            messages.success(request, f'✅ Materiál "{material.nazov}" bol aktualizovaný!')
+            return redirect('sklad_materialu')
+    else:
+        form = MaterialForm(instance=material)
+
+    context = {
+        'form': form,
+        'title': f'Upraviť materiál: {material.nazov}',
+        'submit_text': 'Uložiť zmeny',
+    }
+
+    return render(request, 'core/form_universal.html', context)
+
+
+@login_required
+@permission_required("core.change_skladhotovychdielov", raise_exception=True)
+def upravit_sklad_hotovych_dielov(request, pk):
+    """Úprava položky skladu hotových dielov"""
+    from .forms import SkladHotovychDielovForm
+    from django.contrib import messages
+
+    sklad = get_object_or_404(SkladHotovychDielov, pk=pk)
+
+    if request.method == 'POST':
+        form = SkladHotovychDielovForm(request.POST, instance=sklad)
+        if form.is_valid():
+            form.save()
+            messages.success(request, f'✅ Skladová položka "{sklad.produkt.nazov}" bola aktualizovaná!')
+            return redirect('sklad_hotovych_dielov')
+    else:
+        form = SkladHotovychDielovForm(instance=sklad)
+
+    context = {
+        'form': form,
+        'title': f'Upraviť skladovú položku: {sklad.produkt.nazov}',
+        'submit_text': 'Uložiť zmeny',
+    }
+
+    return render(request, 'core/form_universal.html', context)
+
+
+@login_required
+@permission_required("core.add_skladhotovychdielov", raise_exception=True)
+def novy_sklad_hotovych_dielov(request):
+    """Vytvorenie novej položky skladu hotových dielov"""
+    from .forms import SkladHotovychDielovForm
+    from django.contrib import messages
+
+    if request.method == 'POST':
+        form = SkladHotovychDielovForm(request.POST)
+        if form.is_valid():
+            sklad = form.save()
+            messages.success(request, f'✅ Skladová položka "{sklad.produkt.nazov}" bola vytvorená!')
+            return redirect('sklad_hotovych_dielov')
+    else:
+        form = SkladHotovychDielovForm()
+
+    context = {
+        'form': form,
+        'title': 'Nová skladová položka',
+        'submit_text': 'Vytvoriť položku',
+    }
+
+    return render(request, 'core/form_universal.html', context)
+
+
 # ========================================
 # WEBOVÉ ROZHRANIA PRE VÝROBNÉ DÁVKY
 # ========================================
@@ -1537,6 +1694,11 @@ def nova_prijemka(request):
     from .forms import PrijemkaHotovychDielovForm
     from django.contrib import messages
     
+    initial = {}
+    sklad_id = request.GET.get('sklad')
+    if sklad_id:
+        initial['sklad'] = sklad_id
+
     if request.method == 'POST':
         form = PrijemkaHotovychDielovForm(request.POST)
         if form.is_valid():
@@ -1546,7 +1708,7 @@ def nova_prijemka(request):
             messages.success(request, f'✅ Príjemka +{prijemka.mnozstvo} ks bola zaznamemaná!')
             return redirect('sklad_hotovych_dielov')
     else:
-        form = PrijemkaHotovychDielovForm()
+        form = PrijemkaHotovychDielovForm(initial=initial)
     
     context = {
         'form': form,
@@ -1563,6 +1725,11 @@ def nova_vydajka(request):
     from .forms import VydajkaHotovychDielovForm
     from django.contrib import messages
     
+    initial = {}
+    sklad_id = request.GET.get('sklad')
+    if sklad_id:
+        initial['sklad'] = sklad_id
+
     if request.method == 'POST':
         form = VydajkaHotovychDielovForm(request.POST)
         if form.is_valid():
@@ -1575,7 +1742,7 @@ def nova_vydajka(request):
             except ValueError as e:
                 messages.error(request, f'❌ {str(e)}')
     else:
-        form = VydajkaHotovychDielovForm()
+        form = VydajkaHotovychDielovForm(initial=initial)
     
     context = {
         'form': form,
@@ -1583,4 +1750,73 @@ def nova_vydajka(request):
         'submit_text': 'Vydať',
     }
     
+    return render(request, 'core/form_universal.html', context)
+
+
+@login_required
+@permission_required("core.add_prijemkanasklad", raise_exception=True)
+def nova_prijemka_materialu(request):
+    """Príjemka materiálu na sklad"""
+    from .forms import PrijemkaNaSkladForm
+    from django.contrib import messages
+
+    initial = {}
+    material_id = request.GET.get('material')
+    if material_id:
+        initial['material'] = material_id
+
+    if request.method == 'POST':
+        form = PrijemkaNaSkladForm(request.POST)
+        if form.is_valid():
+            prijemka = form.save()
+            messages.success(request, f'✅ Príjemka +{prijemka.mnozstvo} {prijemka.material.jednotka} bola zaznamenaná!')
+            return redirect('sklad_materialu')
+    else:
+        form = PrijemkaNaSkladForm(initial=initial)
+
+    context = {
+        'form': form,
+        'title': 'Nová príjemka materiálu',
+        'submit_text': 'Naskladniť',
+    }
+
+    return render(request, 'core/form_universal.html', context)
+
+
+@login_required
+@permission_required("core.add_vydajkazoskladu", raise_exception=True)
+def nova_vydajka_materialu(request):
+    """Výdajka materiálu zo skladu"""
+    from .forms import VydajkaZoSkladuForm
+    from django.contrib import messages
+
+    initial = {}
+    material_id = request.GET.get('material')
+    if material_id:
+        initial['material'] = material_id
+
+    if request.method == 'POST':
+        form = VydajkaZoSkladuForm(request.POST)
+        if form.is_valid():
+            vydajka = form.save(commit=False)
+            vydajka.operator = request.user
+
+            if vydajka.mnozstvo > vydajka.material.aktualna_zasoba:
+                messages.error(
+                    request,
+                    f'❌ Nedostatok materiálu na sklade. Dostupné: {vydajka.material.aktualna_zasoba} {vydajka.material.jednotka}.',
+                )
+            else:
+                vydajka.save()
+                messages.success(request, f'✅ Výdajka -{vydajka.mnozstvo} {vydajka.material.jednotka} bola zaznamenaná!')
+                return redirect('sklad_materialu')
+    else:
+        form = VydajkaZoSkladuForm(initial=initial)
+
+    context = {
+        'form': form,
+        'title': 'Nová výdajka materiálu',
+        'submit_text': 'Vydať',
+    }
+
     return render(request, 'core/form_universal.html', context)

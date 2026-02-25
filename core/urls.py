@@ -45,7 +45,13 @@ urlpatterns = [
     path('stroj/<int:pk>/upravit/', views.upravit_stroj, name='upravit_stroj'),
     path('produkt/novy/', views.novy_produkt, name='novy_produkt'),
     path('produkt/<int:pk>/upravit/', views.upravit_produkt, name='upravit_produkt'),
+    path('material/novy/', views.novy_material, name='novy_material'),
+    path('material/<int:pk>/upravit/', views.upravit_material, name='upravit_material'),
+    path('sklad/novy/', views.novy_sklad_hotovych_dielov, name='novy_sklad_hotovych_dielov'),
+    path('sklad/<int:pk>/upravit/', views.upravit_sklad_hotovych_dielov, name='upravit_sklad_hotovych_dielov'),
     path('kontrakt/<int:kontrakt_pk>/davka/nova/', views.nova_vyrobna_davka, name='nova_vyrobna_davka'),
     path('sklad/prijemka/nova/', views.nova_prijemka, name='nova_prijemka'),
     path('sklad/vydajka/nova/', views.nova_vydajka, name='nova_vydajka'),
+    path('sklad/material/prijemka/nova/', views.nova_prijemka_materialu, name='nova_prijemka_materialu'),
+    path('sklad/material/vydajka/nova/', views.nova_vydajka_materialu, name='nova_vydajka_materialu'),
 ]

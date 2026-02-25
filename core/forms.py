@@ -1,6 +1,18 @@
 # core/forms.py
 from django import forms
-from .models import Objednavka, Kontrakt, Produkt, Stroj, VyrobnaDavka, PrijemkaHotovychDielov, VydajkaHotovychDielov
+from .models import (
+    Objednavka,
+    Kontrakt,
+    Produkt,
+    Stroj,
+    VyrobnaDavka,
+    PrijemkaHotovychDielov,
+    VydajkaHotovychDielov,
+    Material,
+    SkladHotovychDielov,
+    PrijemkaNaSklad,
+    VydajkaZoSkladu,
+)
 from django.utils import timezone
 
 class ObjednavkaForm(forms.ModelForm):
@@ -365,4 +377,96 @@ class VydajkaHotovychDielovForm(forms.ModelForm):
             'vyrobna_davka': 'Výrobná dávka',
             'cislo_dodacieho_listu': 'Číslo dodacieho listu',
             'poznamka': 'Poznámka',
+        }
+
+
+class MaterialForm(forms.ModelForm):
+    """Formulár pre úpravu materiálu"""
+
+    class Meta:
+        model = Material
+        fields = [
+            'nazov',
+            'kod',
+            'typ',
+            'jednotka',
+            'minimalna_zasoba',
+            'cena_za_jednotku',
+            'priemer_mm',
+            'tyc_dlzka_m',
+            'kg_na_meter',
+            'aktualna_zasoba',
+        ]
+        widgets = {
+            'nazov': forms.TextInput(attrs={'class': 'form-control'}),
+            'kod': forms.TextInput(attrs={'class': 'form-control'}),
+            'typ': forms.Select(attrs={'class': 'form-select'}),
+            'jednotka': forms.TextInput(attrs={'class': 'form-control'}),
+            'minimalna_zasoba': forms.NumberInput(attrs={'class': 'form-control', 'step': '0.01', 'min': '0'}),
+            'cena_za_jednotku': forms.NumberInput(attrs={'class': 'form-control', 'step': '0.01', 'min': '0'}),
+            'priemer_mm': forms.NumberInput(attrs={'class': 'form-control', 'step': '0.01', 'min': '0'}),
+            'tyc_dlzka_m': forms.NumberInput(attrs={'class': 'form-control', 'step': '0.01', 'min': '0'}),
+            'kg_na_meter': forms.NumberInput(attrs={'class': 'form-control', 'step': '0.001', 'min': '0'}),
+            'aktualna_zasoba': forms.NumberInput(attrs={'class': 'form-control', 'step': '0.01', 'min': '0'}),
+        }
+
+
+class SkladHotovychDielovForm(forms.ModelForm):
+    """Formulár pre úpravu skladovej položky hotových dielov"""
+
+    class Meta:
+        model = SkladHotovychDielov
+        fields = [
+            'produkt',
+            'mnozstvo',
+            'minimalna_zasoba',
+            'optimalna_zasoba',
+            'poznamka',
+        ]
+        widgets = {
+            'produkt': forms.Select(attrs={'class': 'form-select'}),
+            'mnozstvo': forms.NumberInput(attrs={'class': 'form-control', 'min': '0'}),
+            'minimalna_zasoba': forms.NumberInput(attrs={'class': 'form-control', 'min': '0'}),
+            'optimalna_zasoba': forms.NumberInput(attrs={'class': 'form-control', 'min': '0'}),
+            'poznamka': forms.Textarea(attrs={'class': 'form-control', 'rows': 3}),
+        }
+
+
+class PrijemkaNaSkladForm(forms.ModelForm):
+    """Formulár pre príjem materiálu na sklad"""
+
+    class Meta:
+        model = PrijemkaNaSklad
+        fields = [
+            'material',
+            'mnozstvo',
+            'dodavatel',
+            'cislo_dodaciho_listu',
+            'poznamka',
+        ]
+        widgets = {
+            'material': forms.Select(attrs={'class': 'form-select'}),
+            'mnozstvo': forms.NumberInput(attrs={'class': 'form-control', 'step': '0.01', 'min': '0.01'}),
+            'dodavatel': forms.TextInput(attrs={'class': 'form-control'}),
+            'cislo_dodaciho_listu': forms.TextInput(attrs={'class': 'form-control'}),
+            'poznamka': forms.Textarea(attrs={'class': 'form-control', 'rows': 3}),
+        }
+
+
+class VydajkaZoSkladuForm(forms.ModelForm):
+    """Formulár pre výdaj materiálu zo skladu"""
+
+    class Meta:
+        model = VydajkaZoSkladu
+        fields = [
+            'material',
+            'objednavka',
+            'mnozstvo',
+            'poznamka',
+        ]
+        widgets = {
+            'material': forms.Select(attrs={'class': 'form-select'}),
+            'objednavka': forms.Select(attrs={'class': 'form-select'}),
+            'mnozstvo': forms.NumberInput(attrs={'class': 'form-control', 'step': '0.01', 'min': '0.01'}),
+            'poznamka': forms.Textarea(attrs={'class': 'form-control', 'rows': 3}),
         }
