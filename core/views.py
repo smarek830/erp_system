@@ -499,14 +499,17 @@ def zoznam_strojov(request):
     stroje = Stroj.objects.all().order_by("nazov")
     from .models import OperaciaVyroby
 
-    interval = request.GET.get('interval', 'dni')
+    interval = request.GET.get('interval') or request.session.get('stroje_interval', 'dni')
     if interval not in {'dni', 'tyzdne', 'mesiace'}:
         interval = 'dni'
 
-    rozsah = request.GET.get('rozsah', '30')
+    rozsah = request.GET.get('rozsah') or request.session.get('stroje_rozsah', '30')
     if rozsah not in {'7', '30', '90'}:
         rozsah = '30'
     rozsah_dni = int(rozsah)
+
+    request.session['stroje_interval'] = interval
+    request.session['stroje_rozsah'] = rozsah
 
     now = timezone.now()
     today = now.date()
