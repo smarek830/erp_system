@@ -133,7 +133,7 @@
                                             </a>
                                         {% endif %}
                                         {% if perms.core.change_kontrakt %}
-                                            <a href="/admin/core/kontrakt/{{ kontrakt.pk }}/change/" 
+                                            <a href="{% url 'upravit_kontrakt' kontrakt.pk %}" 
                                                class="btn btn-outline-primary btn-sm" title="Upraviť">
                                                 ✏️
                                             </a>
@@ -321,7 +321,7 @@
                     </a>
                 {% endif %}
                 {% if perms.core.change_kontrakt %}
-                    <a href="/admin/core/kontrakt/{{ kontrakt.pk }}/change/" 
+                    <a href="{% url 'upravit_kontrakt' kontrakt.pk %}" 
                        class="btn btn-outline-primary">
                         ✏️
                     </a>

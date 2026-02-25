@@ -1,0 +1,61 @@
+:root {
+    --app-bg: #f8f9fa;
+    --app-font: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
+    --container-max-width: 1200px;
+    --container-side-padding: 16px;
+    --container-side-padding-mobile: 10px;
+}
+
+body {
+    font-family: var(--app-font);
+    background-color: var(--app-bg);
+}
+
+.navbar {
+    box-shadow: 0 2px 4px rgba(0,0,0,.1);
+}
+
+.app-container {
+    max-width: var(--container-max-width);
+    margin: 20px auto;
+    padding: 0 var(--container-side-padding);
+}
+
+.version-badge {
+    font-size: 0.8rem;
+    color: #e9ecef;
+    margin-left: 10px;
+}
+
+.page-header {
+    gap: 0.5rem;
+}
+
+@media (max-width: 767.98px) {
+    .app-container {
+        margin: 12px auto;
+        padding: 0 var(--container-side-padding-mobile);
+    }
+
+    .version-badge {
+        margin-left: 0;
+        font-size: 0.72rem;
+        color: #6c757d;
+        line-height: 1.25;
+        word-break: break-word;
+    }
+
+    .card-header h4,
+    .card-header h5,
+    .card-header h6 {
+        font-size: 1rem;
+    }
+
+    .table {
+        font-size: 0.9rem;
+    }
+
+    .btn {
+        min-height: 42px;
+    }
+}
