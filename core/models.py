@@ -1,7 +1,9 @@
 from django.db import models
+from django.db.models import Sum
 from django.utils import timezone
 from django.contrib.auth.models import User
 from datetime import timedelta
+from decimal import Decimal
 from django.db.models.signals import post_save
 from django.dispatch import receiver
 
@@ -325,6 +327,7 @@ class Objednavka(models.Model):
             if stara_objednavka.stav != 'vyroba' and self.stav == 'vyroba':
                 super().save(*args, **kwargs)
                 self._vytvor_operacie_z_kusovnika()
+                self._vydaj_material()
                 return
 
         super().save(*args, **kwargs)
@@ -349,6 +352,32 @@ class Objednavka(models.Model):
                 cas_pripravy=sablona.cas_pripravy,
                 cas_kus=sablona.cas_kus,
                 stav='caka'
+            )
+
+    def _vydaj_material(self):
+        """Automaticky odpíše materiál zo skladu pri spustení výroby."""
+        if self.vydajky_material.exists():
+            return
+
+        produkt = self.produkt
+        material = getattr(produkt, 'material_ref', None)
+        if not material:
+            return
+
+        dlzka_na_kus = float(produkt.dlzka_na_kus_mm or 0)
+        kg_na_meter = float(material.kg_na_meter or 0)
+        if dlzka_na_kus <= 0 or kg_na_meter <= 0:
+            return
+
+        dlzka_m = (dlzka_na_kus * self.mnozstvo) / 1000.0
+        kg = round(dlzka_m * kg_na_meter, 3)
+
+        if kg > 0:
+            VydajkaZoSkladu.objects.create(
+                material=material,
+                objednavka=self,
+                mnozstvo=Decimal(str(kg)),
+                poznamka=f"Automatická výdajka pre zákazku #{self.cislo_objednavky}",
             )
 
     def __str__(self):
@@ -391,17 +420,22 @@ class Objednavka(models.Model):
             }
         )
 
-        # Naskladni len OK kusy
-        mnozstvo_ok = self.celkom_ok_kusy
+        # Zistí, koľko kusov bolo už naskladnených (napr. po smenách)
+        uz_naskladnene = PrijemkaHotovychDielov.objects.filter(
+            objednavka=self
+        ).aggregate(Sum('mnozstvo'))['mnozstvo__sum'] or 0
 
-        PrijemkaHotovychDielov.objects.create(
-            sklad=sklad,
-            objednavka=self,
-            mnozstvo=mnozstvo_ok,
-            datum=timezone.now(),
-            operator=None,
-            poznamka=f"Automatické naskladnenie z objednávky #{self.cislo_objednavky} ({mnozstvo_ok} OK, {self.celkom_nok_kusy} NOK)"
-        )
+        mnozstvo_ok = self.celkom_ok_kusy - uz_naskladnene
+
+        if mnozstvo_ok > 0:
+            PrijemkaHotovychDielov.objects.create(
+                sklad=sklad,
+                objednavka=self,
+                mnozstvo=mnozstvo_ok,
+                datum=timezone.now(),
+                operator=None,
+                poznamka=f"Finálne naskladnenie z zákazky #{self.cislo_objednavky} ({self.celkom_ok_kusy} OK, {self.celkom_nok_kusy} NOK)"
+            )
 
     class Meta:
         verbose_name = "Objednávka"

@@ -1,7 +1,7 @@
 {% extends 'core/base.html' %}
 
 {% block content %}
-<div class="containerpy-4">
+<div class="container py-4">
     <div class="row justify-content-center">
         <div class="col-lg-8 col-xl-6">
             
@@ -97,6 +97,55 @@
                                 <div class="form-text">Celkový počet kusov, ktoré budú vyrobené počas trvania kontraktu</div>
                             </div>
 
+                            <!-- Materiál info box -->
+                            <div class="col-12">
+                                <div id="material-info" class="border border-warning bg-warning-subtle text-dark rounded px-3 py-2 small" style="display: none;">
+                                    <div><strong>Materiál:</strong> <span id="material-text">-</span></div>
+                                    <div class="mt-2"><strong>Vlastnosti tyče:</strong> <span id="material-props">-</span></div>
+                                    <table class="table table-sm mb-0 mt-3">
+                                        <thead class="table-light">
+                                            <tr>
+                                                <th colspan="2">Potreba materiálu</th>
+                                            </tr>
+                                        </thead>
+                                        <tbody>
+                                            <tr>
+                                                <td>Kusov na tyč:</td>
+                                                <td class="text-end"><strong id="kusyNaTyc">-</strong></td>
+                                            </tr>
+                                            <tr>
+                                                <td>Potrebná dĺžka:</td>
+                                                <td class="text-end"><strong id="potrebaDlzka">-</strong> m</td>
+                                            </tr>
+                                            <tr>
+                                                <td>Potrebná hmotnosť:</td>
+                                                <td class="text-end"><strong id="potrebaKg">-</strong> kg</td>
+                                            </tr>
+                                            <tr>
+                                                <td>Potrebný počet tyčí:</td>
+                                                <td class="text-end"><strong id="potrebaTyce">-</strong></td>
+                                            </tr>
+                                            <tr class="table-warning border-top">
+                                                <td><strong>Zásoba skladu:</strong></td>
+                                                <td class="text-end"><strong id="zasoba">-</strong> <span id="jednotka">kg</span></td>
+                                            </tr>
+                                            <tr class="table-info">
+                                                <td><strong>Minimálna zásoba:</strong></td>
+                                                <td class="text-end"><strong id="minZasoba">-</strong> <span id="jednotka2">kg</span></td>
+                                            </tr>
+                                            <tr id="nedostatokRow" style="display: none;" class="table-danger">
+                                                <td><strong>⚠️ NEDOSTATOK:</strong></td>
+                                                <td class="text-end"><strong id="nedostatok">-</strong> kg</td>
+                                            </tr>
+                                            <tr id="podMinimomRow" style="display: none;" class="table-warning">
+                                                <td><strong>⚠️ Pod minimom po výdaji:</strong></td>
+                                                <td class="text-end"><strong id="podMinimom">-</strong> kg zostatok</td>
+                                            </tr>
+                                        </tbody>
+                                    </table>
+                                </div>
+                            </div>
+
                             <!-- Dátum od -->
                             <div class="col-md-6">
                                 <label for="{{ form.datum_od.id_for_label }}" class="form-label fw-bold">
@@ -156,4 +205,93 @@
         </div>
     </div>
 </div>
+
+{{ produkt_material_map|json_script:"material-data" }}
+
+<script>
+    (function () {
+        const selectEl = document.getElementById("id_produkt");
+        const materialEl = document.getElementById("material-info");
+        const qtyEl = document.getElementById("id_pocet_kusov_celkovo");
+        if (!selectEl || !materialEl) return;
+
+        const materialData = JSON.parse(document.getElementById("material-data").textContent || "{}");
+
+        const updateInfo = () => {
+            const produktId = selectEl.value;
+            if (!produktId || !materialData[produktId]) {
+                materialEl.style.display = "none";
+                return;
+            }
+
+            const data = materialData[produktId];
+            const qty = qtyEl ? parseFloat(qtyEl.value || "0") : 0;
+            const dlzkaNaKus = parseFloat(data.dlzka_na_kus_mm || 0);
+            const tycDlzka = parseFloat(data.tyc_dlzka_m || 0);
+            const kgNaMeter = parseFloat(data.kg_na_meter || 0);
+            const zasoba = parseFloat(data.zasoba || 0);
+            const minZasoba = parseFloat(data.minimalna_zasoba || 0);
+
+            document.getElementById("material-text").textContent =
+                `${data.material_nazov} (${data.material_kod})`;
+            document.getElementById("material-props").textContent =
+                `Ø ${data.priemer_mm || 0} mm | Dĺžka tyče: ${tycDlzka} m | ${kgNaMeter} kg/m`;
+
+            const dlzkaM = qty > 0 && dlzkaNaKus > 0 ? (qty * dlzkaNaKus) / 1000 : 0;
+            const kg = dlzkaM > 0 && kgNaMeter > 0 ? dlzkaM * kgNaMeter : 0;
+            const kusyNaTyc = tycDlzka > 0 && dlzkaNaKus > 0 ? Math.floor((tycDlzka * 1000) / dlzkaNaKus) : 0;
+            const tyce = tycDlzka > 0 && dlzkaM > 0 ? Math.ceil(dlzkaM / tycDlzka) : 0;
+
+            document.getElementById("kusyNaTyc").textContent = kusyNaTyc;
+            document.getElementById("potrebaDlzka").textContent = dlzkaM.toFixed(2);
+            document.getElementById("potrebaKg").textContent = kg.toFixed(2);
+            document.getElementById("potrebaTyce").textContent = tyce;
+            document.getElementById("zasoba").textContent = zasoba.toFixed(2);
+            document.getElementById("jednotka").textContent = data.jednotka;
+            document.getElementById("minZasoba").textContent = minZasoba.toFixed(2);
+            document.getElementById("jednotka2").textContent = data.jednotka;
+
+            const nedostatokRow = document.getElementById("nedostatokRow");
+            const podMinimomRow = document.getElementById("podMinimomRow");
+            let hasWarning = false;
+
+            if ((data.jednotka || "").toLowerCase() === "kg" && kg > 0) {
+                const nedostatok = Math.max(0, kg - zasoba);
+                if (nedostatok > 0) {
+                    document.getElementById("nedostatok").textContent = nedostatok.toFixed(2);
+                    nedostatokRow.style.display = "table-row";
+                    hasWarning = true;
+                } else {
+                    nedostatokRow.style.display = "none";
+                }
+
+                const zostatok = zasoba - kg;
+                if (zostatok < minZasoba && zostatok >= 0) {
+                    document.getElementById("podMinimom").textContent = zostatok.toFixed(2);
+                    podMinimomRow.style.display = "table-row";
+                    hasWarning = true;
+                } else {
+                    podMinimomRow.style.display = "none";
+                }
+            } else {
+                nedostatokRow.style.display = "none";
+                podMinimomRow.style.display = "none";
+            }
+
+            if (hasWarning) {
+                materialEl.classList.remove("border-warning", "bg-warning-subtle", "text-dark");
+                materialEl.classList.add("border-danger", "bg-danger-subtle");
+            } else {
+                materialEl.classList.remove("border-danger", "bg-danger-subtle");
+                materialEl.classList.add("border-warning", "bg-warning-subtle", "text-dark");
+            }
+
+            materialEl.style.display = "block";
+        };
+
+        selectEl.addEventListener("change", updateInfo);
+        if (qtyEl) qtyEl.addEventListener("input", updateInfo);
+        updateInfo();
+    })();
+</script>
 {% endblock %}

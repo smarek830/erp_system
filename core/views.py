@@ -1056,51 +1056,65 @@ def end_operation(request, objednavka_pk, operacia_pk):
 @require_POST
 def end_work(request, pk):
     objednavka = get_object_or_404(Objednavka, pk=pk)
-    
+
     # Kontrola, či je operátor priradený k objednávke
     if request.user not in objednavka.priradeni_operatori.all() and not objednavka.zaznamy.filter(operator=request.user).exists():
         return JsonResponse({'status': 'error', 'message': 'Nie ste priradený k tejto objednávke!'})
-    
+
     # Kontrola, či sú všetky operácie ukončené
     running_operations = objednavka.operacie.filter(stav='vyroba')
     if running_operations.exists():
         operation_names = ', '.join([op.nazov_operacie for op in running_operations])
         return JsonResponse({
-            'status': 'error', 
+            'status': 'error',
             'message': f'Nemôžete ukončiť prácu! Nasledujúce operácie sú stále aktívné: {operation_names}'
         })
-    
+
     fotka = request.FILES.get('fotka')
     pocet_ok = int(request.POST.get('pocet_ok', 0))
-    pocet_nok = int(request.POST.get('pocet_nok', 0))
     poznamka = request.POST.get('poznamka', '')
-    
-    # Validácia - ak sú NOK kusy, musia byť najprv nahlásené ako problém
-    if pocet_nok > 0:
-        return JsonResponse({
-            'status': 'error', 
-            'message': f'Nemôžete ukončiť prácu s {pocet_nok} NOK kusmi! Najprv nahláste problém pomocou formulára "Nahlásiť problém".'
-        })
-    
+
+    if pocet_ok < 0:
+        return JsonResponse({'status': 'error', 'message': 'Počet OK kusov nemôže byť záporný.'})
+
     KontrolaKvality.objects.create(
         objednavka=objednavka,
         operator=request.user,
-        namerana_hodnota=f"OK: {pocet_ok}, NOK: {pocet_nok}",
+        namerana_hodnota=f"OK: {pocet_ok}",
         vysledok_ok=True,
         fotka=fotka,
         poznamka=poznamka
     )
-    
+
     objednavka.vyrobene_mnozstvo += pocet_ok
-    
+
     if objednavka.je_dokoncena():
         objednavka.stav = 'hotovo'
     else:
         objednavka.stav = 'nova'
-    
+
     objednavka.save()
-    
-    return JsonResponse({'status': 'ok', 'message': 'Práca ukončená'})
+
+    # Naskladni vyrobené kusy do skladu hotových dielov
+    if pocet_ok > 0:
+        sklad, _ = SkladHotovychDielov.objects.get_or_create(
+            produkt=objednavka.produkt,
+            defaults={
+                'mnozstvo': 0,
+                'minimalna_zasoba': 10,
+                'optimalna_zasoba': 100,
+            }
+        )
+        PrijemkaHotovychDielov.objects.create(
+            sklad=sklad,
+            objednavka=objednavka,
+            mnozstvo=pocet_ok,
+            datum=timezone.now(),
+            operator=request.user,
+            poznamka=poznamka or f"Príjemka po smene – zákazka #{objednavka.cislo_objednavky}",
+        )
+
+    return JsonResponse({'status': 'ok', 'message': f'Práca ukončená. Naskladnené: {pocet_ok} ks.'})
 
 @login_required
 @require_POST
@@ -1178,24 +1192,32 @@ def uloz_kontrolu_kvality(request, pk):
 @require_POST
 def report_problem(request, pk):
     objednavka = get_object_or_404(Objednavka, pk=pk)
-    
+
     # Kontrola, či je operátor priradený k objednávke
     if request.user not in objednavka.priradeni_operatori.all() and not objednavka.zaznamy.filter(operator=request.user).exists():
         return JsonResponse({'status': 'error', 'message': 'Nie ste priradený k tejto objednávke!'})
-    
-    data = json.loads(request.body)
-    typ_problemu = data.get('typ_problemu')
-    pocet_kusov = data.get('pocet_kusov', 0)
-    popis = data.get('popis', '')
-    
+
+    if request.FILES or request.POST:
+        typ_problemu = request.POST.get('typ_problemu')
+        pocet_kusov = request.POST.get('pocet_kusov', 0)
+        popis = request.POST.get('popis', '')
+        fotka = request.FILES.get('fotka_problemu')
+    else:
+        data = json.loads(request.body)
+        typ_problemu = data.get('typ_problemu')
+        pocet_kusov = data.get('pocet_kusov', 0)
+        popis = data.get('popis', '')
+        fotka = None
+
     HlasenieVyroby.objects.create(
         objednavka=objednavka,
         operator=request.user,
         typ_problemu=typ_problemu,
         pocet_kusov_nepodarkov=pocet_kusov,
-        popis_problemu=popis
+        popis_problemu=popis,
+        fotka_problemu=fotka,
     )
-    
+
     return JsonResponse({'status': 'ok', 'message': 'Problém nahlásený'})
 
 @login_required
@@ -1427,6 +1449,7 @@ def nova_objednavka(request):
             'material_kod': material.kod,
             'jednotka': material.jednotka,
             'zasoba': float(material.aktualna_zasoba),
+            'minimalna_zasoba': float(material.minimalna_zasoba),
             'dlzka_na_kus_mm': float(produkt.dlzka_na_kus_mm or 0),
             'tyc_dlzka_m': float(material.tyc_dlzka_m or 0),
             'kg_na_meter': float(material.kg_na_meter or 0),
@@ -1449,7 +1472,7 @@ def novy_kontrakt(request):
     """Vytvorenie nového kontraktu cez webový formulár"""
     from .forms import KontraktForm
     from django.contrib import messages
-    
+
     if request.method == 'POST':
         form = KontraktForm(request.POST)
         if form.is_valid():
@@ -1458,11 +1481,29 @@ def novy_kontrakt(request):
             return redirect('plan_vyroby')
     else:
         form = KontraktForm()
-    
+
+    produkt_material_map = {}
+    for produkt in Produkt.objects.select_related('material_ref'):
+        material = produkt.material_ref
+        if not material:
+            continue
+        produkt_material_map[produkt.id] = {
+            'material_nazov': material.nazov,
+            'material_kod': material.kod,
+            'jednotka': material.jednotka,
+            'zasoba': float(material.aktualna_zasoba),
+            'minimalna_zasoba': float(material.minimalna_zasoba),
+            'dlzka_na_kus_mm': float(produkt.dlzka_na_kus_mm or 0),
+            'tyc_dlzka_m': float(material.tyc_dlzka_m or 0),
+            'kg_na_meter': float(material.kg_na_meter or 0),
+            'priemer_mm': float(material.priemer_mm or 0),
+        }
+
     context = {
         'form': form,
         'title': 'Nový kontrakt',
         'submit_text': 'Vytvoriť kontrakt',
+        'produkt_material_map': produkt_material_map,
     }
     return render(request, 'core/novy_kontrakt.html', context)
 
@@ -1502,6 +1543,7 @@ def upravit_objednavku(request, pk):
             'material_kod': material.kod,
             'jednotka': material.jednotka,
             'zasoba': float(material.aktualna_zasoba),
+            'minimalna_zasoba': float(material.minimalna_zasoba),
             'dlzka_na_kus_mm': float(produkt.dlzka_na_kus_mm or 0),
             'tyc_dlzka_m': float(material.tyc_dlzka_m or 0),
             'kg_na_meter': float(material.kg_na_meter or 0),
@@ -1525,9 +1567,9 @@ def upravit_kontrakt(request, pk):
     """Úprava existujúceho kontraktu"""
     from .forms import KontraktForm
     from django.contrib import messages
-    
+
     kontrakt = get_object_or_404(Kontrakt, pk=pk)
-    
+
     if request.method == 'POST':
         form = KontraktForm(request.POST, instance=kontrakt)
         if form.is_valid():
@@ -1536,12 +1578,30 @@ def upravit_kontrakt(request, pk):
             return redirect('plan_vyroby')
     else:
         form = KontraktForm(instance=kontrakt)
-    
+
+    produkt_material_map = {}
+    for produkt in Produkt.objects.select_related('material_ref'):
+        material = produkt.material_ref
+        if not material:
+            continue
+        produkt_material_map[produkt.id] = {
+            'material_nazov': material.nazov,
+            'material_kod': material.kod,
+            'jednotka': material.jednotka,
+            'zasoba': float(material.aktualna_zasoba),
+            'minimalna_zasoba': float(material.minimalna_zasoba),
+            'dlzka_na_kus_mm': float(produkt.dlzka_na_kus_mm or 0),
+            'tyc_dlzka_m': float(material.tyc_dlzka_m or 0),
+            'kg_na_meter': float(material.kg_na_meter or 0),
+            'priemer_mm': float(material.priemer_mm or 0),
+        }
+
     context = {
         'form': form,
         'title': f'Upraviť kontrakt #{kontrakt.cislo_kontraktu}',
         'submit_text': 'Uložiť zmeny',
         'kontrakt': kontrakt,
+        'produkt_material_map': produkt_material_map,
     }
     return render(request, 'core/novy_kontrakt.html', context)
 

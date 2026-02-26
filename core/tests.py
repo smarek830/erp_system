@@ -4,6 +4,7 @@ from datetime import date, timedelta
 from django.test import TestCase, Client
 from django.contrib.auth.models import User
 from django.contrib.auth.models import Permission
+from django.urls import reverse
 from django.utils import timezone
 
 from .models import (
@@ -261,3 +262,124 @@ class KvalitaDashboardViewTest(TestCase):
         self.assertEqual(resp.status_code, 200)
         self.assertEqual(resp.context['kpi']['pocet_kontrol'], 1)
         self.assertEqual(resp.context['kpi']['nok_kusy'], 0)
+
+
+# ---------------------------------------------------------------------------
+# New feature tests
+# ---------------------------------------------------------------------------
+
+class MaterialVydajkaAutoTest(TestCase):
+    """_vydaj_material() deducts raw material when order enters 'vyroba'."""
+
+    def setUp(self):
+        from .models import Material, Produkt as P
+        self.material = Material.objects.create(
+            nazov='Test materiál',
+            kod='MAT-AUTO-001',
+            aktualna_zasoba=Decimal('100.000'),
+            jednotka='kg',
+            kg_na_meter=Decimal('2.000'),
+            tyc_dlzka_m=Decimal('6.00'),
+        )
+        self.produkt = Produkt.objects.get_or_create(
+            cislo_dielu='T-AUTO-MAT-001',
+            defaults={
+                'nazov': 'Testovaci produkt auto mat',
+                'material_ref': self.material,
+                'dlzka_na_kus_mm': Decimal('500.00'),
+            }
+        )[0]
+        self.produkt.material_ref = self.material
+        self.produkt.dlzka_na_kus_mm = Decimal('500.00')
+        self.produkt.save()
+
+    def test_material_deducted_on_vyroba(self):
+        from .models import VydajkaZoSkladu, Material
+        obj = _objednavka(produkt=self.produkt, mnozstvo=10)
+        self.assertEqual(VydajkaZoSkladu.objects.filter(objednavka=obj).count(), 0)
+
+        obj.stav = 'vyroba'
+        obj.save()
+
+        vydajky = VydajkaZoSkladu.objects.filter(objednavka=obj)
+        self.assertEqual(vydajky.count(), 1)
+
+        material = Material.objects.get(pk=self.material.pk)
+        # 10 ks * 0.5 m/ks * 2 kg/m = 10 kg
+        expected_kg = Decimal('10.000')
+        self.assertEqual(vydajky.first().mnozstvo, expected_kg)
+        self.assertEqual(material.aktualna_zasoba, Decimal('100.000') - expected_kg)
+
+    def test_material_not_double_deducted(self):
+        from .models import VydajkaZoSkladu
+        obj = _objednavka(produkt=self.produkt, mnozstvo=5)
+        obj.stav = 'vyroba'
+        obj.save()
+
+        # Call save() again with vyroba – should not create another vydajka
+        obj.stav = 'vyroba'
+        obj.save()
+
+        self.assertEqual(VydajkaZoSkladu.objects.filter(objednavka=obj).count(), 1)
+
+
+class EndWorkWarehouseTest(TestCase):
+    """end_work view creates PrijemkaHotovychDielov for OK pieces."""
+
+    def setUp(self):
+        self.user = User.objects.create_user('op_endwork', password='pass')
+        self.produkt = _produkt('T-ENDWORK-001')
+        self.obj = _objednavka(produkt=self.produkt, mnozstvo=10)
+        self.obj.priradeni_operatori.add(self.user)
+        self.client = Client()
+        self.client.force_login(self.user)
+
+    def test_end_work_creates_prijemka(self):
+        from .models import PrijemkaHotovychDielov
+        url = reverse('end_work', kwargs={'pk': self.obj.pk})
+        resp = self.client.post(url, {'pocet_ok': 5, 'poznamka': 'test smena'})
+        self.assertEqual(resp.status_code, 200)
+        data = resp.json()
+        self.assertEqual(data['status'], 'ok')
+
+        prijemky = PrijemkaHotovychDielov.objects.filter(objednavka=self.obj)
+        self.assertEqual(prijemky.count(), 1)
+        self.assertEqual(prijemky.first().mnozstvo, 5)
+
+    def test_end_work_zero_pieces_no_prijemka(self):
+        from .models import PrijemkaHotovychDielov
+        url = reverse('end_work', kwargs={'pk': self.obj.pk})
+        resp = self.client.post(url, {'pocet_ok': 0})
+        self.assertEqual(resp.status_code, 200)
+        self.assertEqual(PrijemkaHotovychDielov.objects.filter(objednavka=self.obj).count(), 0)
+
+
+class NaskladniHotoveDielAvoidDoubleCountTest(TestCase):
+    """_naskladni_hotove_diely skips pieces already received via end_work."""
+
+    def setUp(self):
+        self.user = User.objects.create_user('op_double', password='pass')
+        self.produkt = _produkt('T-DOUBLE-001')
+        self.obj = _objednavka(produkt=self.produkt, mnozstvo=10)
+        _operacia_vyroby(self.obj, stav='hotova', vyrobene_kusy=10)
+
+    def test_no_double_count_when_already_received(self):
+        from .models import SkladHotovychDielov, PrijemkaHotovychDielov
+        sklad, _ = SkladHotovychDielov.objects.get_or_create(
+            produkt=self.produkt,
+            defaults={'mnozstvo': 0, 'minimalna_zasoba': 0, 'optimalna_zasoba': 100}
+        )
+        # Simulate pieces already received via end_work
+        PrijemkaHotovychDielov.objects.create(
+            sklad=sklad,
+            objednavka=self.obj,
+            mnozstvo=10,
+            operator=self.user,
+        )
+        sklad_before = SkladHotovychDielov.objects.get(pk=sklad.pk).mnozstvo
+
+        # _naskladni_hotove_diely should add 0 since all pieces already received
+        self.obj._naskladni_hotove_diely()
+
+        sklad_after = SkladHotovychDielov.objects.get(pk=sklad.pk).mnozstvo
+        self.assertEqual(sklad_after, sklad_before)

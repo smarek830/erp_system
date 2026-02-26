@@ -134,9 +134,17 @@
                                                 <td><strong>Zásoba skladu:</strong></td>
                                                 <td class="text-end"><strong id="zasoba">-</strong> <span id="jednotka">kg</span></td>
                                             </tr>
+                                            <tr class="table-info">
+                                                <td><strong>Minimálna zásoba:</strong></td>
+                                                <td class="text-end"><strong id="minZasoba">-</strong> <span id="jednotka2">kg</span></td>
+                                            </tr>
                                             <tr id="nedostatokRow" style="display: none;" class="table-danger">
                                                 <td><strong>⚠️ NEDOSTATOK:</strong></td>
                                                 <td class="text-end"><strong id="nedostatok">-</strong> kg</td>
+                                            </tr>
+                                            <tr id="podMinimomRow" style="display: none;" class="table-warning">
+                                                <td><strong>⚠️ Pod minimom po výdaji:</strong></td>
+                                                <td class="text-end"><strong id="podMinimom">-</strong> kg zostatok</td>
                                             </tr>
                                         </tbody>
                                     </table>
@@ -231,6 +239,7 @@
             const tycDlzka = parseFloat(data.tyc_dlzka_m || 0);
             const kgNaMeter = parseFloat(data.kg_na_meter || 0);
             const zasoba = parseFloat(data.zasoba || 0);
+            const minZasoba = parseFloat(data.minimalna_zasoba || 0);
 
             // Update material name and properties
             document.getElementById("material-text").textContent = 
@@ -251,22 +260,41 @@
             document.getElementById("potrebaTyce").textContent = tyce;
             document.getElementById("zasoba").textContent = zasoba.toFixed(2);
             document.getElementById("jednotka").textContent = data.jednotka;
+            document.getElementById("minZasoba").textContent = minZasoba.toFixed(2);
+            document.getElementById("jednotka2").textContent = data.jednotka;
 
-            // Check shortage
-            let nedostatok = 0;
+            // Check shortage and minimum stock
             const nedostatokRow = document.getElementById("nedostatokRow");
-            
+            const podMinimomRow = document.getElementById("podMinimomRow");
+            let hasWarning = false;
+
             if ((data.jednotka || "").toLowerCase() === "kg" && kg > 0) {
-                nedostatok = Math.max(0, kg - zasoba);
+                const nedostatok = Math.max(0, kg - zasoba);
+                if (nedostatok > 0) {
+                    document.getElementById("nedostatok").textContent = nedostatok.toFixed(2);
+                    nedostatokRow.style.display = "table-row";
+                    hasWarning = true;
+                } else {
+                    nedostatokRow.style.display = "none";
+                }
+
+                const zostatok = zasoba - kg;
+                if (zostatok < minZasoba && zostatok >= 0) {
+                    document.getElementById("podMinimom").textContent = zostatok.toFixed(2);
+                    podMinimomRow.style.display = "table-row";
+                    hasWarning = true;
+                } else {
+                    podMinimomRow.style.display = "none";
+                }
+            } else {
+                nedostatokRow.style.display = "none";
+                podMinimomRow.style.display = "none";
             }
 
-            if (nedostatok > 0) {
-                document.getElementById("nedostatok").textContent = nedostatok.toFixed(2);
-                nedostatokRow.style.display = "table-row";
+            if (hasWarning) {
                 materialEl.classList.remove("border-warning", "bg-warning-subtle", "text-dark");
                 materialEl.classList.add("border-danger", "bg-danger-subtle");
             } else {
-                nedostatokRow.style.display = "none";
                 materialEl.classList.remove("border-danger", "bg-danger-subtle");
                 materialEl.classList.add("border-warning", "bg-warning-subtle", "text-dark");
             }

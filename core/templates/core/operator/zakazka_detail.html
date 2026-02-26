@@ -126,20 +126,16 @@
         <div class="col-md-6">
             <div class="card shadow-sm">
                 <div class="card-header bg-success text-white">
-                    <h5 class="mb-0">✅ Ukončiť prácu</h5>
+                    <h5 class="mb-0">✅ Ukončiť prácu / Príjemka do skladu</h5>
                 </div>
                 <div class="card-body">
                     <form id="formUkoncit" method="post" action="/api/operator/end-work/{{ objednavka.pk }}/" enctype="multipart/form-data">
                         {% csrf_token %}
                         <div class="mb-3">
-                            <label class="form-label">Počet hotových kusov</label>
+                            <label class="form-label">Počet hotových kusov (OK)</label>
                             <input type="number" name="pocet_ok" class="form-control" min="0" required>
-                        </div>
-                        <div class="mb-3">
-                            <label class="form-label">Počet nepodarkov</label>
-                            <input type="number" name="pocet_nok" class="form-control" min="0" value="0">
-                            <div class="form-text text-warning">
-                                ⚠️ Ak máte nepodarky, najprv ich nahláste ako problém nižšie.
+                            <div class="form-text text-success">
+                                ✅ Tieto kusy budú automaticky naskladnené do skladu hotových dielov.
                             </div>
                         </div>
                         <div class="mb-3">
@@ -150,7 +146,7 @@
                             <label class="form-label">Poznámka</label>
                             <textarea name="poznamka" class="form-control" rows="2"></textarea>
                         </div>
-                        <button type="submit" class="btn btn-success w-100">✅ Ukončiť prácu</button>
+                        <button type="submit" class="btn btn-success w-100">✅ Ukončiť prácu a naskladniť</button>
                     </form>
                 </div>
             </div>
@@ -162,11 +158,11 @@
                     <h5 class="mb-0">⚠️ Nahlásiť problém</h5>
                 </div>
                 <div class="card-body">
-                    <form id="formProblem" action="/api/operator/report-problem/{{ objednavka.pk }}/">
+                    <form id="formProblem" action="/api/operator/report-problem/{{ objednavka.pk }}/" enctype="multipart/form-data">
                         {% csrf_token %}
                         <div class="mb-3">
                             <label class="form-label">Typ problému</label>
-                            <select id="typ_problemu" class="form-select" required>
+                            <select name="typ_problemu" id="typ_problemu" class="form-select" required>
                                 <option value="NEPODAROK">🗑️ Nepodarok</option>
                                 <option value="PORUCHA_STROJA">⚙️ Porucha stroja</option>
                                 <option value="POSKODENY_NASTROJ">🔧 Poškodený nástroj</option>
@@ -175,11 +171,15 @@
                         </div>
                         <div class="mb-3">
                             <label class="form-label">Počet zlých kusov</label>
-                            <input type="number" id="pocet_kusov_nok" class="form-control" min="0" value="0">
+                            <input type="number" name="pocet_kusov" id="pocet_kusov_nok" class="form-control" min="0" value="0">
                         </div>
                         <div class="mb-3">
                             <label class="form-label">Popis problému</label>
-                            <textarea id="popis_problemu" class="form-control" rows="3" required></textarea>
+                            <textarea name="popis" id="popis_problemu" class="form-control" rows="3" required></textarea>
+                        </div>
+                        <div class="mb-3">
+                            <label class="form-label">Fotka NOK kusu (voliteľné)</label>
+                            <input type="file" name="fotka_problemu" class="form-control" accept="image/*">
                         </div>
                         <button type="submit" class="btn btn-danger w-100">⚠️ Nahlásiť</button>
                     </form>
@@ -311,20 +311,15 @@ document.getElementById('formUkoncit')?.addEventListener('submit', function(e) {
 // Formulár pre hlásenie problému
 document.getElementById('formProblem')?.addEventListener('submit', function(e) {
     e.preventDefault();
-    
-    const problemData = {
-        typ_problemu: document.getElementById('typ_problemu').value,
-        pocet_kusov: document.getElementById('pocet_kusov_nok').value || 0,
-        popis: document.getElementById('popis_problemu').value
-    };
-    
+
+    const formData = new FormData(this);
+
     fetch(this.action, {
         method: 'POST',
         headers: {
             'X-CSRFToken': csrftoken,
-            'Content-Type': 'application/json',
         },
-        body: JSON.stringify(problemData)
+        body: formData
     })
     .then(response => {
         if (!response.ok) throw new Error('HTTP error ' + response.status);
