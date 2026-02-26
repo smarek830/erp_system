@@ -17,6 +17,7 @@ on:
   push:
     branches:
       - main
+  workflow_dispatch:   # umožní manuálne spustenie z GitHub Actions UI
 
 jobs:
   # ── 1. Testy ───────────────────────────────────────────────────────────────
@@ -65,6 +66,9 @@ jobs:
       TAILSCALE_AUTHKEY: ${{ secrets.TAILSCALE_AUTHKEY }}
 
     steps:
+      - name: Stiahni kód
+        uses: actions/checkout@v4
+
       - name: Pripoj sa cez Tailscale (ak je nastavený)
         # Preskočí tento krok, ak secret TAILSCALE_AUTHKEY nie je nastavený
         if: ${{ env.TAILSCALE_AUTHKEY != '' }}
@@ -95,6 +99,20 @@ jobs:
           ssh -vv -i ~/.ssh/id_ed25519 -o BatchMode=yes -o ConnectTimeout=15 -o IdentitiesOnly=yes -o StrictHostKeyChecking=no -o PubkeyAcceptedAlgorithms=+ssh-rsa -o HostKeyAlgorithms=+ssh-rsa \
               "${{ secrets.NAS_USER }}@${{ secrets.NAS_HOST }}" \
               "echo '✅ SSH spojenie funguje'"
+
+      - name: Nahraj súbory na NAS cez rsync
+        run: |
+          # rsync je predinštalovaný na ubuntu-latest runneroch
+          # --exclude db.sqlite3 a media/ zachová produkčné dáta na NASe
+          rsync -az --delete \
+            --exclude='.git' \
+            --exclude='__pycache__' \
+            --exclude='*.pyc' \
+            --exclude='db.sqlite3' \
+            --exclude='media/' \
+            -e "ssh -i ~/.ssh/id_ed25519 -o IdentitiesOnly=yes -o StrictHostKeyChecking=no -o PubkeyAcceptedAlgorithms=+ssh-rsa -o HostKeyAlgorithms=+ssh-rsa" \
+            ./ "${{ secrets.NAS_USER }}@${{ secrets.NAS_HOST }}:${{ secrets.NAS_APP_PATH }}/"
+          echo "✅ Súbory nahraté na NAS"
 
       - name: Nasaď na NAS cez SSH
         run: |
@@ -152,9 +170,6 @@ jobs:
               fi
             fi
             echo "🐳 Použijem: $COMPOSE_CMD"
-
-            echo "⬇️  Stiahnutie najnovšieho kódu z GitHubu..."
-            git pull origin main
 
             echo "🔨 Build Docker image..."
             $COMPOSE_CMD build
