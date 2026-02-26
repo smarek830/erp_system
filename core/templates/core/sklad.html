@@ -89,7 +89,7 @@
                         {% for sklad in sklady %}
                         <tr class="{% if sklad.je_pod_minimom %}table-danger{% elif sklad.je_nad_optimom %}table-warning{% endif %}">
                             <td class="fw-bold">{{ sklad.produkt.nazov }}</td>
-                            <td>de>{{ sklad.produkt.cislo_dielu }}</code></td>
+                            <td><code>{{ sklad.produkt.cislo_dielu }}</code></td>
                             <td class="text-center">
                                 <span class="badge {% if sklad.je_pod_minimom %}bg-danger{% elif sklad.je_nad_optimom %}bg-warning text-dark{% else %}bg-success{% endif %} fs-6">
                                     {{ sklad.mnozstvo }} ks
