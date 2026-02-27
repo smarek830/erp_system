@@ -39,6 +39,7 @@ urlpatterns = [
     path('api/operator/report-problem/<int:pk>/', views.report_problem, name='report_problem'),
     path('api/operator/kontrola-kvality/<int:pk>/', views.uloz_kontrolu_kvality, name='uloz_kontrolu_kvality'),
     path('api/sprievodka/<int:pk>/', views.download_sprievodka, name='download_sprievodka'),
+    path('api/sprievodka/davka/<int:pk>/', views.download_sprievodka_davka, name='download_sprievodka_davka'),
 
     # Nové webové rozhrania
     path('stroj/novy/', views.novy_stroj, name='novy_stroj'),
