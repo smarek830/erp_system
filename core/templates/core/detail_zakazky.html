@@ -122,6 +122,13 @@
             </span>
           </div>
           <small class="text-muted">Dátum vytvorenia: {{ davka.datum_vytvorenia|date:"d.m.Y" }}</small>
+          {% if davka.objednavka %}
+          <div class="mt-2">
+            <a href="{% url 'download_sprievodka_davka' davka.pk %}" class="btn btn-outline-primary btn-sm" target="_blank">
+              🖨️ Tlačiť sprievodku
+            </a>
+          </div>
+          {% endif %}
         </div>
         {% endfor %}
       {% else %}

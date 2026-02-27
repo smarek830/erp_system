@@ -9,6 +9,7 @@ from io import BytesIO
 from PIL import Image
 import tempfile
 import os
+from django.urls import reverse
 
 def generate_sprievodka_pdf(objednavka, request):
     """Generuje PDF sprievodku pre objednávku"""
@@ -153,8 +154,8 @@ def generate_sprievodka_pdf(objednavka, request):
 
 def generate_qr_code(objednavka, request):
     """Generuje QR kód a uloží do dočasného súboru"""
-    # URL na detail zakázky
-    url = request.build_absolute_uri(f'/operator/zakazka/{objednavka.pk}/')
+    # URL na detail zakázky pre operátora
+    url = request.build_absolute_uri(reverse('operator_zakazka_detail', args=[objednavka.pk]))
     
     # Vytvor QR kód
     qr = qrcode.QRCode(

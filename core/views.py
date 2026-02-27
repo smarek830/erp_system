@@ -1257,6 +1257,19 @@ def download_sprievodka(request, pk):
     return response
 
 @login_required
+def download_sprievodka_davka(request, pk):
+    """Stiahnutie PDF sprievodky pre výrobnú dávku"""
+    from django.http import Http404
+    davka = get_object_or_404(VyrobnaDavka, pk=pk)
+    if not davka.objednavka:
+        raise Http404
+    objednavka = davka.objednavka
+    pdf_buffer = generate_sprievodka_pdf(objednavka, request)
+    response = HttpResponse(pdf_buffer, content_type='application/pdf')
+    response['Content-Disposition'] = f'attachment; filename="sprievodka_{objednavka.cislo_objednavky}.pdf"'
+    return response
+
+@login_required
 @permission_required("core.view_objednavka", raise_exception=True)
 def vytvor_objednavku_z_davky(request, davka_pk):
     """Vytvorí objednávku z výrobnej dávky"""
