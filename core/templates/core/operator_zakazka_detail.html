@@ -4,6 +4,18 @@
 {% block page_title %}Zakázka #{{ zakazka.cislo_objednavky }}{% endblock %}
 
 {% block content %}
+<style>
+  @media (prefers-reduced-motion: reduce) {
+    #operacieLoadingOverlay .spinner-border {
+      animation: none !important;
+    }
+
+    #operatorToastContainer .toast {
+      transition: none !important;
+    }
+  }
+</style>
+
 <div class="container px-0 px-md-2 py-2 py-md-4">
   
   <!-- Tlačidlo späť -->
@@ -12,7 +24,7 @@
   </a>
 
   <!-- Hlavička zakázky -->
-  <div class="card mb-4" id="operacieCard">
+  <div class="card mb-4 position-relative" id="operacieCard">
     <div class="card-header bg-primary text-white">
       <h4 class="mb-0">⚙️ Zakázka #{{ zakazka.cislo_objednavky }}</h4>
       <small>{{ zakazka.zakaznik }} - {{ zakazka.produkt.nazov }}</small>
@@ -55,338 +67,9 @@
         </div>
       </div>
     </div>
-  </div>
 
-  <!-- Operácie -->
-  <div class="card mb-4">
-    <div class="card-header bg-secondary text-white">
-      <h5 class="mb-0">📋 Operácie (postupne zhora dole)</h5>
-    </div>
-
-    <!-- Desktop tabuľka -->
-    <div class="card-body p-0 d-none d-md-block">
-      <div class="table-responsive">
-        <table class="table table-hover mb-0 align-middle">
-          <thead class="table-light">
-            <tr>
-              <th>Por.</th>
-              <th>Operácia</th>
-              <th>Stroj</th>
-              <th>Dostupné kusy</th>
-              <th>Vyrobené (OK)</th>
-              <th>NOK</th>
-              <th>Stav</th>
-              <th>Akcia</th>
-            </tr>
-          </thead>
-          <tbody>
-            {% for op in operacie %}
-            <tr>
-              <td><strong>{{ op.poradie }}.</strong></td>
-              <td>
-                <div>{{ op.nazov_operacie }}</div>
-                {% if op.operatori_unikatni %}
-                  <small class="text-muted">
-                    Operátori: 
-                    {% for meno in op.operatori_unikatni %}
-                      {{ meno }}{% if not forloop.last %}, {% endif %}
-                    {% endfor %}
-                  </small>
-                {% endif %}
-              </td>
-              <td>{{ op.stroj.nazov }}</td>
-              <td>
-                <span class="badge {% if op.dostupne_kusy > 0 %}bg-info{% else %}bg-secondary{% endif %}">
-                  {{ op.dostupne_kusy }} ks
-                </span>
-              </td>
-              <td><span class="badge bg-success">{{ op.vyrobene_kusy }} ks</span></td>
-              <td><span class="badge bg-danger">{{ op.nepodarky }} ks</span></td>
-              <td>
-                {% if op.stav == 'caka' %}
-                  <span class="badge bg-secondary">⏳ Čaká</span>
-                {% elif op.stav == 'vyroba' %}
-                  <span class="badge bg-warning text-dark">⚙️ V práci</span>
-                {% elif op.stav == 'hotova' %}
-                  <span class="badge bg-success">✅ Hotová</span>
-                {% elif op.stav == 'pozastavena' %}
-                  <span class="badge bg-secondary">⏸️ Pauza</span>
-                {% endif %}
-              </td>
-              <td>
-                <form method="post" class="d-inline">
-                  {% csrf_token %}
-                  <input type="hidden" name="operacia_id" value="{{ op.id }}">
-                  
-                  {% if op.stav == 'caka' %}
-                    <button type="button"
-                            data-op-action="start"
-                            data-objednavka-id="{{ zakazka.pk }}"
-                            data-operacia-id="{{ op.id }}"
-                            class="btn btn-success btn-sm"
-                            {% if not op.moze_zacat_teraz %}
-                              disabled 
-                              title="Predchádzajúca operácia musí najprv vyrobiť kusy"
-                            {% endif %}>
-                      ▶ Začať
-                    </button>
-                  
-                  {% elif op.stav == 'vyroba' %}
-                    <button type="button"
-                            data-op-action="pause"
-                            data-objednavka-id="{{ zakazka.pk }}"
-                            data-operacia-id="{{ op.id }}"
-                            class="btn btn-warning btn-sm">
-                      ⏸ Pauza
-                    </button>
-                    <button type="button" class="btn btn-primary btn-sm" 
-                            data-bs-toggle="modal" data-bs-target="#ukonciModalDesktop{{ op.id }}">
-                      🔴 Ukončiť dávku
-                    </button>
-                  
-                  {% elif op.stav == 'pozastavena' %}
-                    <button type="button"
-                            data-op-action="start"
-                            data-objednavka-id="{{ zakazka.pk }}"
-                            data-operacia-id="{{ op.id }}"
-                            class="btn btn-info btn-sm"
-                            {% if not op.moze_pokracovat_teraz %}
-                              disabled
-                              title="Nie sú dostupné žiadne kusy"
-                            {% endif %}>
-                      ▶ Pokračovať
-                    </button>
-                  
-                  {% elif op.stav == 'hotova' %}
-                    {% if op.moze_pokracovat_teraz %}
-                      <button type="button"
-                              data-op-action="start"
-                              data-objednavka-id="{{ zakazka.pk }}"
-                              data-operacia-id="{{ op.id }}"
-                              class="btn btn-info btn-sm"
-                              title="Objednávke ešte chýbajú OK kusy - pokračujte v operácii">
-                        🔄 Pokračovať
-                      </button>
-                    {% else %}
-                      <span class="text-success">✅ Hotovo</span>
-                    {% endif %}
-                  {% endif %}
-                </form>
-
-                <!-- Modal pre ukončenie dávky -->
-                <div class="modal fade" id="ukonciModalDesktop{{ op.id }}" tabindex="-1">
-                  <div class="modal-dialog">
-                    <div class="modal-content">
-                      <form method="post">
-                        {% csrf_token %}
-                        <input type="hidden" name="operacia_id" value="{{ op.id }}">
-                        <input type="hidden" name="akcia" value="ukonci_davku">
-                        
-                        <div class="modal-header">
-                          <h5 class="modal-title">Ukončiť dávku: {{ op.nazov_operacie }}</h5>
-                          <button type="button" class="btn-close" data-bs-dismiss="modal"></button>
-                        </div>
-                        <div class="modal-body">
-                          <div class="alert alert-info">
-                            <strong>📦 Dostupné kusy: {{ op.dostupne_kusy }} ks</strong><br>
-                            <small>Už vyrobené: {{ op.vyrobene_kusy }} ks (OK) + {{ op.nepodarky }} ks (NOK)</small>
-                          </div>
-                          
-                          <div class="mb-3">
-                            <label class="form-label">Vyrobené kusy v tejto dávke (OK) *</label>
-                            <input type="number" name="vyrobene_kusy" class="form-control" 
-                                   min="0" max="{{ op.dostupne_kusy }}" required>
-                            <small class="text-muted">Max. {{ op.dostupne_kusy }} ks</small>
-                          </div>
-                          
-                          <div class="mb-3">
-                            <label class="form-label">Nepodarky v tejto dávke (NOK)</label>
-                            <input type="number" name="nepodarky" class="form-control" 
-                                   min="0" value="0">
-                          </div>
-
-                          <div class="alert alert-warning">
-                            <small>
-                              ⚠️ Po ukončení dávky:
-                              <ul class="mb-0">
-                                <li>OK kusy sa preposúvajú do ďalšej operácie</li>
-                                <li>Ak zostanú kusy, môžete pokračovať neskôr</li>
-                                <li>Ak už niet kusov, operácia sa označí ako HOTOVÁ</li>
-                              </ul>
-                            </small>
-                          </div>
-                        </div>
-                        <div class="modal-footer">
-                          <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">Zrušiť</button>
-                          <button type="submit" class="btn btn-primary">Ukončiť dávku</button>
-                        </div>
-                      </form>
-                    </div>
-                  </div>
-                </div>
-
-              </td>
-            </tr>
-            {% endfor %}
-          </tbody>
-        </table>
-      </div>
-    </div>
-
-    <!-- Mobilné karty -->
-    <div class="card-body d-md-none p-2">
-      {% for op in operacie %}
-      <div class="card mb-2 shadow-sm">
-        <div class="card-body">
-          <div class="d-flex justify-content-between align-items-start gap-2 mb-2">
-            <div>
-              <div class="fw-bold">{{ op.poradie }}. {{ op.nazov_operacie }}</div>
-              <small class="text-muted">Stroj: {{ op.stroj.nazov }}</small>
-            </div>
-            <span class="badge {% if op.dostupne_kusy > 0 %}bg-info{% else %}bg-secondary{% endif %}">
-              {{ op.dostupne_kusy }} ks
-            </span>
-          </div>
-
-          {% if op.operatori_unikatni %}
-          <div class="mb-2">
-            <small class="text-muted">
-              Operátori:
-              {% for meno in op.operatori_unikatni %}
-                {{ meno }}{% if not forloop.last %}, {% endif %}
-              {% endfor %}
-            </small>
-          </div>
-          {% endif %}
-
-          <div class="d-flex flex-wrap gap-2 mb-2">
-            <span class="badge bg-success">OK: {{ op.vyrobene_kusy }} ks</span>
-            <span class="badge bg-danger">NOK: {{ op.nepodarky }} ks</span>
-            {% if op.stav == 'caka' %}
-              <span class="badge bg-secondary">⏳ Čaká</span>
-            {% elif op.stav == 'vyroba' %}
-              <span class="badge bg-warning text-dark">⚙️ V práci</span>
-            {% elif op.stav == 'hotova' %}
-              <span class="badge bg-success">✅ Hotová</span>
-            {% elif op.stav == 'pozastavena' %}
-              <span class="badge bg-secondary">⏸️ Pauza</span>
-            {% endif %}
-          </div>
-
-          <form method="post" class="d-grid gap-2">
-            {% csrf_token %}
-            <input type="hidden" name="operacia_id" value="{{ op.id }}">
-
-            {% if op.stav == 'caka' %}
-              <button type="button"
-                      data-op-action="start"
-                      data-objednavka-id="{{ zakazka.pk }}"
-                      data-operacia-id="{{ op.id }}"
-                      class="btn btn-success"
-                      {% if not op.moze_zacat_teraz %}
-                        disabled
-                        title="Predchádzajúca operácia musí najprv vyrobiť kusy"
-                      {% endif %}>
-                ▶ Začať
-              </button>
-
-            {% elif op.stav == 'vyroba' %}
-              <button type="button"
-                      data-op-action="pause"
-                      data-objednavka-id="{{ zakazka.pk }}"
-                      data-operacia-id="{{ op.id }}"
-                      class="btn btn-warning">
-                ⏸ Pauza
-              </button>
-              <button type="button" class="btn btn-primary"
-                      data-bs-toggle="modal" data-bs-target="#ukonciModalMobile{{ op.id }}">
-                🔴 Ukončiť dávku
-              </button>
-
-            {% elif op.stav == 'pozastavena' %}
-              <button type="button"
-                      data-op-action="start"
-                      data-objednavka-id="{{ zakazka.pk }}"
-                      data-operacia-id="{{ op.id }}"
-                      class="btn btn-info"
-                      {% if not op.moze_pokracovat_teraz %}
-                        disabled
-                        title="Nie sú dostupné žiadne kusy"
-                      {% endif %}>
-                ▶ Pokračovať
-              </button>
-
-            {% elif op.stav == 'hotova' %}
-              {% if op.moze_pokracovat_teraz %}
-                <button type="button"
-                        data-op-action="start"
-                        data-objednavka-id="{{ zakazka.pk }}"
-                        data-operacia-id="{{ op.id }}"
-                        class="btn btn-info"
-                        title="Objednávke ešte chýbajú OK kusy - pokračujte v operácii">
-                  🔄 Pokračovať
-                </button>
-              {% else %}
-                <span class="text-success fw-semibold">✅ Hotovo</span>
-              {% endif %}
-            {% endif %}
-          </form>
-        </div>
-      </div>
-
-      <!-- Modal pre ukončenie dávky (mobil) -->
-      <div class="modal fade" id="ukonciModalMobile{{ op.id }}" tabindex="-1">
-        <div class="modal-dialog modal-dialog-scrollable">
-          <div class="modal-content">
-            <form method="post">
-              {% csrf_token %}
-              <input type="hidden" name="operacia_id" value="{{ op.id }}">
-              <input type="hidden" name="akcia" value="ukonci_davku">
-
-              <div class="modal-header">
-                <h5 class="modal-title">Ukončiť dávku: {{ op.nazov_operacie }}</h5>
-                <button type="button" class="btn-close" data-bs-dismiss="modal"></button>
-              </div>
-              <div class="modal-body">
-                <div class="alert alert-info">
-                  <strong>📦 Dostupné kusy: {{ op.dostupne_kusy }} ks</strong><br>
-                  <small>Už vyrobené: {{ op.vyrobene_kusy }} ks (OK) + {{ op.nepodarky }} ks (NOK)</small>
-                </div>
-
-                <div class="mb-3">
-                  <label class="form-label">Vyrobené kusy v tejto dávke (OK) *</label>
-                  <input type="number" name="vyrobene_kusy" class="form-control"
-                         min="0" max="{{ op.dostupne_kusy }}" required>
-                  <small class="text-muted">Max. {{ op.dostupne_kusy }} ks</small>
-                </div>
-
-                <div class="mb-3">
-                  <label class="form-label">Nepodarky v tejto dávke (NOK)</label>
-                  <input type="number" name="nepodarky" class="form-control"
-                         min="0" value="0">
-                </div>
-
-                <div class="alert alert-warning">
-                  <small>
-                    ⚠️ Po ukončení dávky:
-                    <ul class="mb-0">
-                      <li>OK kusy sa preposúvajú do ďalšej operácie</li>
-                      <li>Ak zostanú kusy, môžete pokračovať neskôr</li>
-                      <li>Ak už niet kusov, operácia sa označí ako HOTOVÁ</li>
-                    </ul>
-                  </small>
-                </div>
-              </div>
-              <div class="modal-footer">
-                <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">Zrušiť</button>
-                <button type="submit" class="btn btn-primary">Ukončiť dávku</button>
-              </div>
-            </form>
-          </div>
-        </div>
-      </div>
-      {% endfor %}
-    </div>
+  <div id="operacieCardMount">
+    {% include 'core/operator/_operacie_card.html' %}
   </div>
 
   <!-- Kontrola kvality + uzavretie -->
@@ -449,8 +132,6 @@
                       placeholder="Voliteľná poznámka…"></textarea>
           </div>
 
-          <div id="alertKontrolaKvality" class="alert d-none mb-2" role="alert"></div>
-
           <button type="submit" id="btnUlozKontrolu" class="btn btn-primary btn-lg w-100">
             🔬 Uložiť kontrolu kvality
           </button>
@@ -502,7 +183,7 @@
         <div id="upozornenieKontrola" class="alert alert-warning small mb-2">
           ⚠️ Odporúčame najprv vykonať kontrolu kvality (Krok 1).
         </div>
-        <form method="post" enctype="multipart/form-data">
+        <form method="post" enctype="multipart/form-data" class="js-close-order-form" data-zakazka-id="{{ zakazka.pk }}">
           {% csrf_token %}
           <div class="mb-3">
             <label class="form-label fw-semibold">📦 Finálna fotka balenia *</label>
@@ -512,10 +193,9 @@
             <label class="form-label fw-semibold">Poznámka k baleniu</label>
             <textarea name="poznamka_balenia_final" class="form-control" rows="2" placeholder="Voliteľná poznámka k finálnemu baleniu"></textarea>
           </div>
-          <button type="submit" name="akcia" value="uzavri_zakazku"
+            <button type="submit" name="akcia" value="uzavri_zakazku"
                   id="btnUzavriet"
-                  class="btn btn-success btn-lg w-100"
-                  onclick="return confirm('Naozaj chcete uzavrieť zakázku a naskladniť hotové diely?')">
+              class="btn btn-success btn-lg w-100">
             ✅ Uzavrieť zakázku a naskladniť
           </button>
         </form>
@@ -529,6 +209,9 @@
   {% endif %}
 
 </div>
+
+<div id="operatorToastContainer" class="toast-container position-fixed top-0 end-0 p-3" style="z-index: 1080;"></div>
+<div id="operatorLiveRegion" class="visually-hidden" role="status" aria-live="polite" aria-atomic="true"></div>
 
 <script>
 function getCookie(name) {
@@ -546,17 +229,34 @@ function getCookie(name) {
   return cookieValue;
 }
 
-async function apiPost(url, body, isFormData = false) {
+async function apiPost(url, body, isFormData = false, timeoutMs = 15000) {
   const headers = { 'X-CSRFToken': getCookie('csrftoken') };
   if (!isFormData) {
     headers['Content-Type'] = 'application/json';
   }
 
-  const response = await fetch(url, {
-    method: 'POST',
-    headers,
-    body: isFormData ? body : JSON.stringify(body || {}),
-  });
+  const controller = new AbortController();
+  const timeout = setTimeout(() => controller.abort(), timeoutMs);
+
+  let response;
+  try {
+    response = await fetch(url, {
+      method: 'POST',
+      headers,
+      body: isFormData ? body : JSON.stringify(body || {}),
+      signal: controller.signal,
+    });
+  } catch (error) {
+    if (error && error.name === 'AbortError') {
+      return {
+        status: 'error',
+        message: 'Požiadavka trvá príliš dlho. Skúste to znovu.',
+      };
+    }
+    throw error;
+  } finally {
+    clearTimeout(timeout);
+  }
 
   let data = null;
   try {
@@ -575,22 +275,129 @@ async function apiPost(url, body, isFormData = false) {
   return data;
 }
 
+const formSubmitLocks = new WeakSet();
+
 function showOperatorMessage(message, type = 'success') {
-  const existing = document.getElementById('operatorApiAlert');
-  if (existing) {
-    existing.remove();
+  const titleMap = {
+    success: '✅ Úspech',
+    danger: '❌ Chyba',
+    warning: '⚠️ Upozornenie',
+    info: 'ℹ️ Info',
+  };
+
+  const container = document.getElementById('operatorToastContainer');
+  const liveRegion = document.getElementById('operatorLiveRegion');
+  const reducedMotion = window.matchMedia('(prefers-reduced-motion: reduce)').matches;
+  if (!container) return;
+
+  if (liveRegion) {
+    liveRegion.textContent = `${titleMap[type] || 'Správa'}: ${message}`;
   }
 
-  const wrapper = document.createElement('div');
-  wrapper.id = 'operatorApiAlert';
-  wrapper.className = `alert alert-${type} mb-3`;
-  wrapper.setAttribute('role', 'alert');
-  wrapper.textContent = message;
-
-  const container = document.querySelector('.container');
-  if (container) {
-    container.prepend(wrapper);
+  if (!(window.bootstrap && window.bootstrap.Toast)) {
+    const fallback = document.createElement('div');
+    fallback.className = `alert alert-${type} mb-2`;
+    fallback.setAttribute('role', 'alert');
+    fallback.textContent = message;
+    container.appendChild(fallback);
+    setTimeout(() => fallback.remove(), 3500);
+    return;
   }
+
+  const toastElement = document.createElement('div');
+  toastElement.className = `toast align-items-center border-0 text-bg-${type}`;
+  toastElement.setAttribute('role', 'status');
+  toastElement.setAttribute('aria-live', 'polite');
+  toastElement.setAttribute('aria-atomic', 'true');
+  toastElement.innerHTML = `
+    <div class="d-flex">
+      <div class="toast-body"><strong>${titleMap[type] || 'Správa'}</strong><br>${message}</div>
+      <button type="button" class="btn-close btn-close-white me-2 m-auto" data-bs-dismiss="toast" aria-label="Zavrieť"></button>
+    </div>
+  `;
+
+  container.appendChild(toastElement);
+  const toast = new window.bootstrap.Toast(toastElement, {
+    delay: reducedMotion ? 2400 : 3500,
+    animation: !reducedMotion,
+  });
+  toast.show();
+  toastElement.addEventListener('hidden.bs.toast', () => toastElement.remove());
+}
+
+function setOperationsLoading(isLoading) {
+  const overlay = document.getElementById('operacieLoadingOverlay');
+  const card = document.getElementById('operacieCard');
+  if (!overlay) return;
+
+  if (isLoading) {
+    if (card) {
+      card.querySelectorAll('button[data-op-action]').forEach((button) => {
+        button.dataset.lockPrevDisabled = button.disabled ? '1' : '0';
+        button.disabled = true;
+      });
+    }
+    overlay.classList.remove('d-none');
+    overlay.classList.add('d-flex');
+  } else {
+    if (card) {
+      card.querySelectorAll('button[data-op-action][data-lock-prev-disabled]').forEach((button) => {
+        button.disabled = button.dataset.lockPrevDisabled === '1';
+        delete button.dataset.lockPrevDisabled;
+      });
+    }
+    overlay.classList.add('d-none');
+    overlay.classList.remove('d-flex');
+  }
+}
+
+function updateOperationStatusBadges(operaciaId, stav) {
+  const statusMap = {
+    caka: { label: '⏳ Čaká', classes: ['bg-secondary'] },
+    vyroba: { label: '⚙️ V práci', classes: ['bg-warning', 'text-dark'] },
+    hotova: { label: '✅ Hotová', classes: ['bg-success'] },
+    pozastavena: { label: '⏸️ Pauza', classes: ['bg-secondary'] },
+  };
+
+  const config = statusMap[stav];
+  if (!config) return;
+
+  document
+    .querySelectorAll(`[data-op-status-badge="1"][data-operacia-id="${operaciaId}"]`)
+    .forEach((badge) => {
+      badge.classList.remove('bg-secondary', 'bg-warning', 'bg-success', 'text-dark');
+      config.classes.forEach((className) => badge.classList.add(className));
+      badge.textContent = config.label;
+    });
+}
+
+function updateOperationActionButtons(operaciaId, stav) {
+  const actionMap = {
+    caka: { action: 'start', label: '▶ Začať', classes: ['btn-success'] },
+    vyroba: { action: 'pause', label: '⏸ Pauza', classes: ['btn-warning'] },
+    pozastavena: { action: 'start', label: '▶ Pokračovať', classes: ['btn-info'] },
+    hotova: { action: 'start', label: '🔄 Pokračovať', classes: ['btn-info'] },
+  };
+
+  const config = actionMap[stav];
+  if (!config) return;
+
+  document
+    .querySelectorAll(`button[data-op-action][data-operacia-id="${operaciaId}"]`)
+    .forEach((button) => {
+      button.dataset.opAction = config.action;
+      button.classList.remove('btn-success', 'btn-warning', 'btn-info');
+      config.classes.forEach((className) => button.classList.add(className));
+      button.textContent = config.label;
+      button.disabled = false;
+      button.removeAttribute('title');
+    });
+}
+
+function applyOptimisticOperationState(action, operaciaId, stavOperacie = null) {
+  const predictedStav = stavOperacie || (action === 'pause' ? 'pozastavena' : 'vyroba');
+  updateOperationStatusBadges(operaciaId, predictedStav);
+  updateOperationActionButtons(operaciaId, predictedStav);
 }
 
 async function handleOperationAction(action, objednavkaId, operaciaId, triggerButton = null) {
@@ -624,8 +431,10 @@ async function handleOperationAction(action, objednavkaId, operaciaId, triggerBu
   try {
     const data = await apiPost(opUrlMap[action], payload);
     if (data.status === 'ok') {
+      applyOptimisticOperationState(action, operaciaId, data.stav_operacie || null);
       showOperatorMessage(data.message || 'Akcia bola úspešne vykonaná.', 'success');
-      const refreshed = await refreshOperationsCard();
+      const nextAction = data.stav_operacie === 'vyroba' ? 'pause' : 'start';
+      const refreshed = await refreshOperationsCard({ operaciaId, action: nextAction });
       if (!refreshed) {
         window.location.reload();
       }
@@ -645,11 +454,23 @@ async function handleOperationAction(action, objednavkaId, operaciaId, triggerBu
 
 window.handleOperationAction = handleOperationAction;
 
-async function refreshOperationsCard() {
+async function refreshOperationsCard(focusHint = null) {
   try {
-    const response = await fetch(window.location.href, {
+    setOperationsLoading(true);
+    const mount = document.getElementById('operacieCardMount');
+    const mountTopBefore = mount ? mount.getBoundingClientRect().top : null;
+
+    const activeActionButton = document.activeElement && document.activeElement.matches('button[data-op-action]')
+      ? document.activeElement
+      : null;
+    const resolvedFocusHint = focusHint || (activeActionButton ? {
+      operaciaId: Number(activeActionButton.dataset.operaciaId),
+      action: activeActionButton.dataset.opAction,
+    } : null);
+
+    const response = await fetch(`/operator/zakazka/{{ zakazka.pk }}/operacie-fragment/`, {
       headers: { 'X-Requested-With': 'XMLHttpRequest' },
-      cache: 'no-store',
+      cache: 'no-cache',
     });
 
     if (!response.ok) {
@@ -657,19 +478,36 @@ async function refreshOperationsCard() {
     }
 
     const html = await response.text();
-    const parser = new DOMParser();
-    const doc = parser.parseFromString(html, 'text/html');
-    const nextCard = doc.getElementById('operacieCard');
-    const currentCard = document.getElementById('operacieCard');
-
-    if (!nextCard || !currentCard) {
+    if (!mount) {
       return false;
     }
 
-    currentCard.replaceWith(nextCard);
+    mount.innerHTML = html;
+
+    if (mountTopBefore !== null) {
+      const mountTopAfter = mount.getBoundingClientRect().top;
+      const delta = mountTopAfter - mountTopBefore;
+      if (delta !== 0) {
+        window.scrollBy(0, delta);
+      }
+    }
+
+    if (resolvedFocusHint && Number.isFinite(resolvedFocusHint.operaciaId)) {
+      const selectorWithAction = resolvedFocusHint.action
+        ? `button[data-op-action="${resolvedFocusHint.action}"][data-operacia-id="${resolvedFocusHint.operaciaId}"]`
+        : null;
+      const focusTarget = (selectorWithAction && mount.querySelector(selectorWithAction))
+        || mount.querySelector(`button[data-op-action][data-operacia-id="${resolvedFocusHint.operaciaId}"]`);
+      if (focusTarget) {
+        focusTarget.focus({ preventScroll: true });
+      }
+    }
+
     return true;
   } catch (_) {
     return false;
+  } finally {
+    setOperationsLoading(false);
   }
 }
 
@@ -689,31 +527,155 @@ document.addEventListener('click', function (event) {
   handleOperationAction(action, objednavkaId, operaciaId, button);
 });
 
+document.addEventListener('submit', async function (event) {
+  const closeForm = event.target.closest('form.js-close-order-form');
+  if (closeForm) {
+    event.preventDefault();
+
+    if (formSubmitLocks.has(closeForm)) {
+      return;
+    }
+
+    if (!confirm('Naozaj chcete uzavrieť zakázku a naskladniť hotové diely?')) {
+      return;
+    }
+
+    const zakazkaId = Number(closeForm.dataset.zakazkaId);
+    if (Number.isNaN(zakazkaId)) {
+      showOperatorMessage('Neplatné dáta pre uzavretie zakázky.', 'danger');
+      return;
+    }
+
+    const photoInput = closeForm.querySelector('input[name="fotka_balenia_final"]');
+    if (!photoInput || !photoInput.files || photoInput.files.length === 0) {
+      showOperatorMessage('Pri finálnom uzavretí je povinná fotka balenia.', 'danger');
+      return;
+    }
+
+    const closeButton = closeForm.querySelector('button[type="submit"]');
+    const originalCloseLabel = closeButton ? closeButton.textContent : null;
+    formSubmitLocks.add(closeForm);
+    if (closeButton) {
+      closeButton.disabled = true;
+      closeButton.textContent = '⏳ Uzatváram...';
+    }
+
+    try {
+      const formData = new FormData(closeForm);
+      const data = await apiPost(`/api/operator/close-order/${zakazkaId}/`, formData, true);
+
+      if (data.status === 'ok') {
+        showOperatorMessage(data.message || 'Zakázka bola uzavretá.', 'success');
+        const redirectUrl = data.redirect_url || '/operator/';
+        setTimeout(() => {
+          window.location.href = redirectUrl;
+        }, 600);
+      } else {
+        showOperatorMessage(data.message || 'Nepodarilo sa uzavrieť zakázku.', 'danger');
+      }
+    } catch (error) {
+      showOperatorMessage(`Chyba siete: ${error.message}`, 'danger');
+    } finally {
+      formSubmitLocks.delete(closeForm);
+      if (closeButton) {
+        closeButton.disabled = false;
+        closeButton.textContent = originalCloseLabel;
+      }
+    }
+
+    return;
+  }
+
+  const form = event.target.closest('form.js-end-batch-form');
+  if (!form) return;
+
+  event.preventDefault();
+
+  if (formSubmitLocks.has(form)) {
+    return;
+  }
+
+  const objednavkaId = Number(form.dataset.objednavkaId);
+  const operaciaId = Number(form.dataset.operaciaId);
+  if (Number.isNaN(objednavkaId) || Number.isNaN(operaciaId)) {
+    showOperatorMessage('Neplatné dáta pre ukončenie dávky.', 'danger');
+    return;
+  }
+
+  const submitButton = form.querySelector('button[type="submit"]');
+  const originalLabel = submitButton ? submitButton.textContent : null;
+  formSubmitLocks.add(form);
+  if (submitButton) {
+    submitButton.disabled = true;
+    submitButton.textContent = '⏳ Ukladám...';
+  }
+
+  try {
+    const formData = new FormData(form);
+    const data = await apiPost(`/api/operator/end-batch/${objednavkaId}/${operaciaId}/`, formData, true);
+
+    if (data.status === 'ok') {
+      if (data.stav_operacie) {
+        updateOperationStatusBadges(operaciaId, data.stav_operacie);
+        updateOperationActionButtons(operaciaId, data.stav_operacie);
+      }
+      showOperatorMessage(data.message || 'Dávka bola ukončená.', 'success');
+
+      const modalElement = form.closest('.modal');
+      if (modalElement && window.bootstrap && window.bootstrap.Modal) {
+        const modalInstance = window.bootstrap.Modal.getInstance(modalElement);
+        if (modalInstance) {
+          modalInstance.hide();
+        }
+      }
+
+      const refreshed = await refreshOperationsCard({ operaciaId });
+      if (!refreshed) {
+        window.location.reload();
+      }
+    } else {
+      showOperatorMessage(data.message || 'Nepodarilo sa ukončiť dávku.', 'danger');
+    }
+  } catch (error) {
+    showOperatorMessage(`Chyba siete: ${error.message}`, 'danger');
+  } finally {
+    formSubmitLocks.delete(form);
+    if (submitButton) {
+      submitButton.disabled = false;
+      submitButton.textContent = originalLabel;
+    }
+  }
+});
+
 (function () {
   const formKK = document.getElementById('formKontrolaKvality');
   if (!formKK) return;
 
   formKK.addEventListener('submit', function (e) {
     e.preventDefault();
+
+    if (formSubmitLocks.has(formKK)) {
+      return;
+    }
+
     const btn = document.getElementById('btnUlozKontrolu');
-    const alert = document.getElementById('alertKontrolaKvality');
     btn.disabled = true;
     btn.textContent = '⏳ Ukladám…';
+    formSubmitLocks.add(formKK);
 
     const fd = new FormData(formKK);
 
     apiPost('/api/operator/kontrola-kvality/{{ zakazka.pk }}/', fd, true)
     .then(data => {
-      alert.classList.remove('d-none', 'alert-danger', 'alert-success', 'alert-warning');
       if (data.status === 'ok') {
-        alert.classList.add('alert-success');
-        alert.textContent = data.message || 'Kontrola kvality bola uložená.';
+        showOperatorMessage(data.message || 'Kontrola kvality bola uložená.', 'success');
         // Mark step 1 done
         document.getElementById('cardKontrolaKvality').classList.remove('border-primary');
         document.getElementById('cardKontrolaKvality').classList.add('border-success');
         formKK.reset();
         btn.disabled = false;
         btn.textContent = '🔬 Uložiť ďalší záznam kontroly';
+        formSubmitLocks.delete(formKK);
         // Update step 2
         const upoz = document.getElementById('upozornenieKontrola');
         if (upoz) upoz.classList.add('d-none');
@@ -724,18 +686,17 @@ document.addEventListener('click', function (event) {
           document.getElementById('btnUzavriet').before(warn);
         }
       } else {
-        alert.classList.add('alert-danger');
-        alert.textContent = data.message || 'Nepodarilo sa uložiť kontrolu kvality.';
+        showOperatorMessage(data.message || 'Nepodarilo sa uložiť kontrolu kvality.', 'danger');
         btn.disabled = false;
         btn.textContent = '🔬 Uložiť kontrolu kvality';
+        formSubmitLocks.delete(formKK);
       }
     })
     .catch(err => {
-      alert.classList.remove('d-none');
-      alert.classList.add('alert-danger');
-      alert.textContent = '❌ Chyba siete: ' + err.message;
+      showOperatorMessage('Chyba siete: ' + err.message, 'danger');
       btn.disabled = false;
       btn.textContent = '🔬 Uložiť kontrolu kvality';
+      formSubmitLocks.delete(formKK);
     });
   });
 })();

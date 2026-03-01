@@ -29,12 +29,15 @@ urlpatterns = [
     # Operátorské URL
     path('operator/', views.operator_dashboard, name='operator_dashboard'),
     path('operator/zakazka/<int:pk>/', views.operator_zakazka_detail, name='operator_zakazka_detail'),
+    path('operator/zakazka/<int:pk>/operacie-fragment/', views.operator_operacie_fragment, name='operator_operacie_fragment'),
     path('operator/prevziat-zakazku/<int:pk>/', views.operator_prevziat_zakazku, name='operator_prevziat_zakazku'),
 
     # AJAX API
     path('api/operator/start/<int:objednavka_pk>/<int:operacia_pk>/', views.start_operation, name='start_operation'),
     path('api/operator/pause/<int:objednavka_pk>/<int:operacia_pk>/', views.pause_operation, name='pause_operation'),
+    path('api/operator/end-batch/<int:objednavka_pk>/<int:operacia_pk>/', views.end_batch, name='end_batch'),
     path('api/operator/end/<int:objednavka_pk>/<int:operacia_pk>/', views.end_operation, name='end_operation'),
+    path('api/operator/close-order/<int:pk>/', views.close_order, name='close_order'),
     path('api/operator/end-work/<int:pk>/', views.end_work, name='end_work'),
     path('api/operator/report-problem/<int:pk>/', views.report_problem, name='report_problem'),
     path('api/operator/kontrola-kvality/<int:pk>/', views.uloz_kontrolu_kvality, name='uloz_kontrolu_kvality'),

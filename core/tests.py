@@ -6,6 +6,7 @@ from django.contrib.auth.models import User
 from django.contrib.auth.models import Permission
 from django.urls import reverse
 from django.utils import timezone
+from django.core.files.uploadedfile import SimpleUploadedFile
 
 from .models import (
     Stroj, Produkt, Operacia, Objednavka, OperaciaVyroby,
@@ -405,6 +406,112 @@ class OperatorApiValidationTest(TestCase):
         self.assertEqual(resp.status_code, 200)
         data = resp.json()
         self.assertEqual(data['status'], 'error')
+
+
+class OperatorEndBatchApiTest(TestCase):
+    def setUp(self):
+        self.user = User.objects.create_user('op_end_batch', password='pass')
+        self.produkt = _produkt('T-END-BATCH-001')
+        self.obj = _objednavka(produkt=self.produkt, mnozstvo=10)
+        self.obj.priradeni_operatori.add(self.user)
+        self.operacia = _operacia_vyroby(self.obj, stav='vyroba', vyrobene_kusy=0)
+        self.client = Client()
+        self.client.force_login(self.user)
+
+    def test_end_batch_returns_ok(self):
+        url = reverse('end_batch', kwargs={
+            'objednavka_pk': self.obj.pk,
+            'operacia_pk': self.operacia.pk,
+        })
+        resp = self.client.post(url, {'vyrobene_kusy': 1, 'nepodarky': 0})
+        self.assertEqual(resp.status_code, 200)
+        data = resp.json()
+        self.assertEqual(data['status'], 'ok')
+
+    def test_end_batch_invalid_integer_returns_error(self):
+        url = reverse('end_batch', kwargs={
+            'objednavka_pk': self.obj.pk,
+            'operacia_pk': self.operacia.pk,
+        })
+        resp = self.client.post(url, {'vyrobene_kusy': 'x', 'nepodarky': 0})
+        self.assertEqual(resp.status_code, 200)
+        data = resp.json()
+        self.assertEqual(data['status'], 'error')
+
+
+class OperatorCloseOrderApiTest(TestCase):
+    def setUp(self):
+        self.user = User.objects.create_user('op_close_order', password='pass')
+        self.produkt = _produkt('T-CLOSE-ORDER-001')
+        self.obj = _objednavka(produkt=self.produkt, mnozstvo=5)
+        self.obj.priradeni_operatori.add(self.user)
+        _operacia_vyroby(self.obj, stav='hotova', vyrobene_kusy=5)
+        self.client = Client()
+        self.client.force_login(self.user)
+
+    def test_close_order_requires_photo(self):
+        url = reverse('close_order', kwargs={'pk': self.obj.pk})
+        resp = self.client.post(url, {'poznamka_balenia_final': 'bez fotky'})
+        self.assertEqual(resp.status_code, 200)
+        data = resp.json()
+        self.assertEqual(data['status'], 'error')
+
+    def test_close_order_success(self):
+        url = reverse('close_order', kwargs={'pk': self.obj.pk})
+        photo = SimpleUploadedFile(
+            'balenie.jpg',
+            b'\xff\xd8\xff\xe0testjpeg',
+            content_type='image/jpeg',
+        )
+        resp = self.client.post(
+            url,
+            {'poznamka_balenia_final': 'ok', 'fotka_balenia_final': photo},
+        )
+        self.assertEqual(resp.status_code, 200)
+        data = resp.json()
+        self.assertEqual(data['status'], 'ok')
+        self.obj.refresh_from_db()
+        self.assertEqual(self.obj.stav, 'hotovo')
+
+
+class OperatorOperationsFragmentViewTest(TestCase):
+    def setUp(self):
+        self.user = User.objects.create_user('op_fragment', password='pass')
+        self.other = User.objects.create_user('op_fragment_other', password='pass')
+        self.produkt = _produkt('T-FRAGMENT-001')
+        self.obj = _objednavka(produkt=self.produkt, mnozstvo=5)
+        self.obj.priradeni_operatori.add(self.user)
+        _operacia_vyroby(self.obj, stav='vyroba', vyrobene_kusy=1)
+
+    def test_fragment_authorized_returns_html(self):
+        client = Client()
+        client.force_login(self.user)
+        url = reverse('operator_operacie_fragment', kwargs={'pk': self.obj.pk})
+        resp = client.get(url)
+        self.assertEqual(resp.status_code, 200)
+        self.assertIn('Operácie', resp.content.decode('utf-8'))
+        self.assertIn('ETag', resp)
+        self.assertEqual(resp.get('Cache-Control'), 'private, no-cache')
+
+    def test_fragment_if_none_match_returns_304(self):
+        client = Client()
+        client.force_login(self.user)
+        url = reverse('operator_operacie_fragment', kwargs={'pk': self.obj.pk})
+
+        first = client.get(url)
+        self.assertEqual(first.status_code, 200)
+        etag = first.get('ETag')
+        self.assertTrue(etag)
+
+        second = client.get(url, HTTP_IF_NONE_MATCH=etag)
+        self.assertEqual(second.status_code, 304)
+
+    def test_fragment_unauthorized_operator_gets_403(self):
+        client = Client()
+        client.force_login(self.other)
+        url = reverse('operator_operacie_fragment', kwargs={'pk': self.obj.pk})
+        resp = client.get(url)
+        self.assertEqual(resp.status_code, 403)
 
 
 class NaskladniHotoveDielAvoidDoubleCountTest(TestCase):

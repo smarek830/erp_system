@@ -53,6 +53,48 @@ def _get_json_body(request):
     return data if isinstance(data, dict) else None
 
 
+def _finish_operation_batch(operacia, operator_user, vyrobene, nepodarky):
+    operacia.ukonci_davku(vyrobene, nepodarky)
+
+    operator_zaznam = operacia.operatori.filter(
+        operator=operator_user,
+        cas_konca__isnull=True
+    ).first()
+    if operator_zaznam:
+        operator_zaznam.cas_konca = timezone.now()
+        operator_zaznam.vyrobene_kusy += vyrobene
+        operator_zaznam.save()
+
+    zostava = operacia.get_dostupne_kusy_na_vstupe()
+    if operacia.stav == 'hotova':
+        return (
+            f'Operácia ÚPLNE UKONČENÁ! '
+            f'Celkovo vyrobené: {operacia.vyrobene_kusy} ks, Nepodarky: {operacia.nepodarky} ks'
+        )
+
+    return f'Dávka ukončená! Vyrobené: {vyrobene} ks, Nepodarky: {nepodarky} ks. Zostáva ešte: {zostava} ks'
+
+
+def _close_order_with_packaging_photo(zakazka, operator_user, fotka_balenia, poznamka_balenia=''):
+    if not fotka_balenia:
+        raise ValueError('Pri finálnom uzavretí je povinná fotka balenia.')
+
+    KontrolaKvality.objects.create(
+        objednavka=zakazka,
+        operator=operator_user,
+        typ_kontroly='FINALNA',
+        pocet_ok_kusov=zakazka.celkom_ok_kusy,
+        pocet_nok_kusov=zakazka.celkom_nok_kusy,
+        namerana_hodnota='Finálna kontrola balenia',
+        vysledok_ok=True,
+        fotka_balenia=fotka_balenia,
+        poznamka=poznamka_balenia,
+    )
+
+    zakazka.uzavri_zakazku()
+    return f'Zakázka #{zakazka.cislo_objednavky} bola uzavretá a hotové diely boli naskladnené!'
+
+
 @login_required
 def quick_logout(request):
     logout(request)
@@ -763,11 +805,9 @@ def operator_zakazka_detail(request, pk):
     zakazka = get_object_or_404(Objednavka, pk=pk)
     
     # Kontrola, či je operátor priradený k objednávke
-    if request.user not in zakazka.priradeni_operatori.all() and not zakazka.zaznamy.filter(operator=request.user).exists():
+    if not _user_has_operator_access(request.user, zakazka):
         messages.error(request, '⚠️ Nie ste priradený k tejto objednávke!')
         return redirect('operator_dashboard')
-    
-    operacie = zakazka.operacie.all().order_by('poradie')
     
     # Spracovanie akcií operátora
     if request.method == "POST":
@@ -858,36 +898,16 @@ def operator_zakazka_detail(request, pk):
                     )
             
             elif akcia == 'ukonci_davku':
-                vyrobene = int(request.POST.get('vyrobene_kusy', 0))
-                nepodarky = int(request.POST.get('nepodarky', 0))
-                
                 try:
-                    operacia.ukonci_davku(vyrobene, nepodarky)
-                    
-                    # Ukončiť záznam operátora
-                    operator_zaznam = operacia.operatori.filter(
-                        operator=request.user,
-                        cas_konca__isnull=True
-                    ).first()
-                    if operator_zaznam:
-                        operator_zaznam.cas_konca = timezone.now()
-                        operator_zaznam.vyrobene_kusy += vyrobene
-                        operator_zaznam.save()
-                    
-                    zostava = operacia.get_dostupne_kusy_na_vstupe()
-                    if operacia.stav == 'hotova':
-                        messages.success(
-                            request, 
-                            f'✅ Operácia ÚPLNE UKONČENÁ!<br>'
-                            f'Celkovo vyrobené: {operacia.vyrobene_kusy} ks, Nepodarky: {operacia.nepodarky} ks'
-                        )
-                    else:
-                        messages.success(
-                            request, 
-                            f'✅ Dávka ukončená! Vyrobené: {vyrobene} ks, Nepodarky: {nepodarky} ks<br>'
-                            f'Zostáva ešte: {zostava} ks'
-                        )
-                    
+                    vyrobene = int(request.POST.get('vyrobene_kusy', 0))
+                    nepodarky = int(request.POST.get('nepodarky', 0))
+                except (TypeError, ValueError):
+                    messages.error(request, '❌ Chyba: Zadané hodnoty musia byť celé čísla.')
+                    return redirect('operator_zakazka_detail', pk=pk)
+
+                try:
+                    message = _finish_operation_batch(operacia, request.user, vyrobene, nepodarky)
+                    messages.success(request, f'✅ {message}')
                 except ValueError as e:
                     messages.error(request, f'❌ Chyba: {str(e)}')
         
@@ -897,34 +917,27 @@ def operator_zakazka_detail(request, pk):
                 fotka_balenia = request.FILES.get('fotka_balenia_final')
                 poznamka_balenia = request.POST.get('poznamka_balenia_final', '')
 
-                if not fotka_balenia:
-                    messages.error(request, '❌ Pri finálnom uzavretí je povinná fotka balenia.')
-                    return redirect('operator_zakazka_detail', pk=pk)
-
-                KontrolaKvality.objects.create(
-                    objednavka=zakazka,
-                    operator=request.user,
-                    typ_kontroly='FINALNA',
-                    pocet_ok_kusov=zakazka.celkom_ok_kusy,
-                    pocet_nok_kusov=zakazka.celkom_nok_kusy,
-                    namerana_hodnota='Finálna kontrola balenia',
-                    vysledok_ok=True,
-                    fotka_balenia=fotka_balenia,
-                    poznamka=poznamka_balenia,
+                message = _close_order_with_packaging_photo(
+                    zakazka,
+                    request.user,
+                    fotka_balenia,
+                    poznamka_balenia,
                 )
-
-                zakazka.uzavri_zakazku()
-                messages.success(
-                    request, 
-                    f'✅ Zakázka #{zakazka.cislo_objednavky} bola uzavretá a hotové diely boli naskladnené!'
-                )
+                messages.success(request, f'✅ {message}')
                 return redirect('operator_dashboard')
             except ValueError as e:
                 messages.error(request, f'❌ {str(e)}')
         
         return redirect('operator_zakazka_detail', pk=pk)
     
-    # Výpočet pre každú operáciu
+    context = _build_operator_order_detail_context(zakazka)
+    
+    return render(request, 'core/operator_zakazka_detail.html', context)
+
+
+def _build_operator_order_detail_context(zakazka):
+    operacie = zakazka.operacie.all().order_by('poradie')
+
     for op in operacie:
         op.dostupne_kusy = op.get_dostupne_kusy_na_vstupe()
         op.max_kusy = op.get_max_vyrobitelne_kusy()
@@ -933,12 +946,10 @@ def operator_zakazka_detail(request, pk):
             op.operatori.select_related('operator').values_list('operator__username', flat=True)
         ))
         op.moze_zacat_teraz = op.moze_zacat()
-        # moze_pokracovat_teraz je @property v modele, nemožno priraďovať
-    
-    # Skontroluj, či sa môže zakázka uzavrieť
+
     moze_uzavriet, dovod = zakazka.moze_sa_uzavriet()
-    
-    context = {
+
+    return {
         'zakazka': zakazka,
         'operacie': operacie,
         'moze_uzavriet': moze_uzavriet,
@@ -947,8 +958,48 @@ def operator_zakazka_detail(request, pk):
         'kontrolne_parametre': zakazka.produkt.kontrolne_parametre.all(),
         'posledne_kontroly': zakazka.kontroly.select_related('operator').order_by('-cas_kontroly')[:10],
     }
-    
-    return render(request, 'core/operator_zakazka_detail.html', context)
+
+
+def _build_operacie_fragment_etag(operacie):
+    snapshot = []
+    for op in operacie:
+        snapshot.append({
+            'id': op.id,
+            'stav': op.stav,
+            'vyrobene_kusy': op.vyrobene_kusy,
+            'nepodarky': op.nepodarky,
+            'dostupne_kusy': getattr(op, 'dostupne_kusy', None),
+            'operatori_unikatni': getattr(op, 'operatori_unikatni', []),
+        })
+
+    digest = hashlib.sha256(
+        json.dumps(snapshot, ensure_ascii=False, sort_keys=True, default=str).encode('utf-8')
+    ).hexdigest()
+    return f'W/"{digest}"'
+
+
+@login_required
+def operator_operacie_fragment(request, pk):
+    zakazka = get_object_or_404(Objednavka, pk=pk)
+
+    if not _user_has_operator_access(request.user, zakazka):
+        return HttpResponse('Prístup zamietnutý', status=403)
+
+    context = _build_operator_order_detail_context(zakazka)
+    etag = _build_operacie_fragment_etag(context['operacie'])
+
+    if_none_match = request.headers.get('If-None-Match', '')
+    request_etags = [item.strip() for item in if_none_match.split(',') if item.strip()]
+    if etag in request_etags:
+        response = HttpResponse(status=304)
+        response['ETag'] = etag
+        response['Cache-Control'] = 'private, no-cache'
+        return response
+
+    response = render(request, 'core/operator/_operacie_card.html', context)
+    response['ETag'] = etag
+    response['Cache-Control'] = 'private, no-cache'
+    return response
 
 # ========================================
 # AJAX AKCIE - TRACKING PER OPERÁCIA
@@ -1002,7 +1053,10 @@ def start_operation(request, objednavka_pk, operacia_pk):
         objednavka.stav = 'vyroba'
         objednavka.save()
     
-    return _api_ok(f'Operácia {operacia_vyroby.nazov_operacie} začatá')
+    return _api_ok(
+        f'Operácia {operacia_vyroby.nazov_operacie} začatá',
+        stav_operacie=operacia_vyroby.stav,
+    )
 
 @login_required
 @require_POST
@@ -1045,7 +1099,7 @@ def pause_operation(request, objednavka_pk, operacia_pk):
     objednavka.stav = 'pozastavene'
     objednavka.save()
     
-    return _api_ok('Operácia pozastavená')
+    return _api_ok('Operácia pozastavená', stav_operacie=operacia_vyroby.stav)
 
 @login_required
 @require_POST
@@ -1080,7 +1134,46 @@ def end_operation(request, objednavka_pk, operacia_pk):
         operator_zaznam.cas_konca = timezone.now()
         operator_zaznam.save()
     
-    return _api_ok(f'Operácia {operacia_vyroby.nazov_operacie} ukončená')
+    return _api_ok(
+        f'Operácia {operacia_vyroby.nazov_operacie} ukončená',
+        stav_operacie=operacia_vyroby.stav,
+    )
+
+
+@login_required
+@require_POST
+def end_batch(request, objednavka_pk, operacia_pk):
+    objednavka = get_object_or_404(Objednavka, pk=objednavka_pk)
+    operacia_vyroby = get_object_or_404(OperaciaVyroby, pk=operacia_pk)
+
+    if not _user_has_operator_access(request.user, objednavka):
+        return _api_error('Nie ste priradený k tejto objednávke!')
+
+    if operacia_vyroby.objednavka != objednavka:
+        return _api_error('Operácia nepatrí k tejto objednávke')
+
+    if request.POST:
+        vyrobene_raw = request.POST.get('vyrobene_kusy', 0)
+        nepodarky_raw = request.POST.get('nepodarky', 0)
+    else:
+        data = _get_json_body(request)
+        if data is None:
+            return _api_error('Neplatný JSON formát požiadavky.')
+        vyrobene_raw = data.get('vyrobene_kusy', 0)
+        nepodarky_raw = data.get('nepodarky', 0)
+
+    try:
+        vyrobene = int(vyrobene_raw)
+        nepodarky = int(nepodarky_raw)
+    except (TypeError, ValueError):
+        return _api_error('Zadané hodnoty musia byť celé čísla.')
+
+    try:
+        message = _finish_operation_batch(operacia_vyroby, request.user, vyrobene, nepodarky)
+    except ValueError as e:
+        return _api_error(str(e))
+
+    return _api_ok(message, stav_operacie=operacia_vyroby.stav)
 
 @login_required
 @require_POST
@@ -1145,6 +1238,30 @@ def end_work(request, pk):
         )
 
     return _api_ok(f'Práca ukončená. Naskladnené: {pocet_ok} ks.')
+
+
+@login_required
+@require_POST
+def close_order(request, pk):
+    objednavka = get_object_or_404(Objednavka, pk=pk)
+
+    if not _user_has_operator_access(request.user, objednavka):
+        return _api_error('Nie ste priradený k tejto objednávke!')
+
+    fotka_balenia = request.FILES.get('fotka_balenia_final')
+    poznamka_balenia = request.POST.get('poznamka_balenia_final', '')
+
+    try:
+        message = _close_order_with_packaging_photo(
+            objednavka,
+            request.user,
+            fotka_balenia,
+            poznamka_balenia,
+        )
+    except ValueError as e:
+        return _api_error(str(e))
+
+    return _api_ok(message, redirect_url='/operator/')
 
 @login_required
 @require_POST
