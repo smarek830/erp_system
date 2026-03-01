@@ -120,6 +120,52 @@ body {
     background-color: var(--bs-tertiary-bg);
 }
 
+[data-bs-theme="dark"] .table {
+    --bs-table-color: #d7dee7;
+    --bs-table-striped-color: #d7dee7;
+    --bs-table-hover-color: #eef2f7;
+    --bs-table-border-color: rgba(255, 255, 255, 0.08);
+}
+
+[data-bs-theme="dark"] .table-primary {
+    --bs-table-bg: #293548;
+    --bs-table-striped-bg: #2f3d52;
+    --bs-table-hover-bg: #374763;
+    --bs-table-color: #d9e8ff;
+}
+
+[data-bs-theme="dark"] .table-success {
+    --bs-table-bg: #223a30;
+    --bs-table-striped-bg: #274238;
+    --bs-table-hover-bg: #2f4d42;
+    --bs-table-color: #d8f5e3;
+}
+
+[data-bs-theme="dark"] .table-warning {
+    --bs-table-bg: #413821;
+    --bs-table-striped-bg: #4a4027;
+    --bs-table-hover-bg: #564b2e;
+    --bs-table-color: #ffefc6;
+}
+
+[data-bs-theme="dark"] .table-danger {
+    --bs-table-bg: #45282c;
+    --bs-table-striped-bg: #4f2d32;
+    --bs-table-hover-bg: #5d363c;
+    --bs-table-color: #ffd8dc;
+}
+
+[data-bs-theme="dark"] .table-info {
+    --bs-table-bg: #223745;
+    --bs-table-striped-bg: #274051;
+    --bs-table-hover-bg: #2f4b60;
+    --bs-table-color: #d7efff;
+}
+
+[data-bs-theme="dark"] .text-muted {
+    color: #a8b3c1 !important;
+}
+
 #themeToggleBtn {
     min-width: 96px;
     border-radius: 0.6rem;
