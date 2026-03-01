@@ -55,6 +55,7 @@ git pull origin main
 docker-compose exec web sh -c 'cp /data/db.sqlite3 /data/db_backup_$(date +%Y%m%d_%H%M%S).sqlite3'
 
 # Spustiť robustný deploy script (detekuje docker-compose / docker compose)
+# + automaticky vytvorí timestamp backup SQLite pred restartom
 sh deploy.sh
 ```
 

@@ -2,7 +2,7 @@
 
 # ====================================================
 # Deployment script pre ERP System na NAS
-# Spustenie: bash deploy.sh
+# Spustenie: sh deploy.sh
 # ====================================================
 
 set -e
@@ -40,6 +40,17 @@ compose() {
 
 echo "🚀 Spúšťanie deployment ERP System na NAS..."
 echo "================================================"
+
+# Backup databázy pred nasadením (best-effort)
+echo "💾 Backup SQLite databázy..."
+BACKUP_TS="$(date +%Y%m%d_%H%M%S)"
+BACKUP_PATH="/data/backups/db_${BACKUP_TS}.sqlite3"
+
+if compose exec -T web sh -c "if [ -f /data/db.sqlite3 ]; then mkdir -p /data/backups && cp /data/db.sqlite3 $BACKUP_PATH; fi" >/dev/null 2>&1; then
+	echo "✅ Backup uložený: $BACKUP_PATH"
+else
+	echo "⚠️  Backup sa nepodarilo vytvoriť (kontajner možno ešte nebeží). Pokračujem..."
+fi
 
 # Zastavenie starej verzie
 echo "⏹️  Zastavenie starej verzie..."
