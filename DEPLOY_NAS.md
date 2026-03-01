@@ -54,11 +54,8 @@ git pull origin main
 # Voliteľný backup databázy (veľmi odporúčané)
 docker-compose exec web sh -c 'cp /data/db.sqlite3 /data/db_backup_$(date +%Y%m%d_%H%M%S).sqlite3'
 
-# Rebuild a restart
-docker-compose up -d --build
-
-# Migrácie po update
-docker-compose exec web python manage.py migrate
+# Spustiť robustný deploy script (detekuje docker-compose / docker compose)
+sh deploy.sh
 ```
 
 ## Konfigurácia (ak je potrebná):
