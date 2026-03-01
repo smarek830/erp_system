@@ -12,7 +12,7 @@
   </a>
 
   <!-- Hlavička zakázky -->
-  <div class="card mb-4">
+  <div class="card mb-4" id="operacieCard">
     <div class="card-header bg-primary text-white">
       <h4 class="mb-0">⚙️ Zakázka #{{ zakazka.cislo_objednavky }}</h4>
       <small>{{ zakazka.zakaznik }} - {{ zakazka.produkt.nazov }}</small>
@@ -119,7 +119,10 @@
                   <input type="hidden" name="operacia_id" value="{{ op.id }}">
                   
                   {% if op.stav == 'caka' %}
-                    <button type="submit" name="akcia" value="zacat" 
+                    <button type="button"
+                            data-op-action="start"
+                            data-objednavka-id="{{ zakazka.pk }}"
+                            data-operacia-id="{{ op.id }}"
                             class="btn btn-success btn-sm"
                             {% if not op.moze_zacat_teraz %}
                               disabled 
@@ -129,7 +132,11 @@
                     </button>
                   
                   {% elif op.stav == 'vyroba' %}
-                    <button type="submit" name="akcia" value="pauza" class="btn btn-warning btn-sm">
+                    <button type="button"
+                            data-op-action="pause"
+                            data-objednavka-id="{{ zakazka.pk }}"
+                            data-operacia-id="{{ op.id }}"
+                            class="btn btn-warning btn-sm">
                       ⏸ Pauza
                     </button>
                     <button type="button" class="btn btn-primary btn-sm" 
@@ -138,7 +145,10 @@
                     </button>
                   
                   {% elif op.stav == 'pozastavena' %}
-                    <button type="submit" name="akcia" value="pokracovat" 
+                    <button type="button"
+                            data-op-action="start"
+                            data-objednavka-id="{{ zakazka.pk }}"
+                            data-operacia-id="{{ op.id }}"
                             class="btn btn-info btn-sm"
                             {% if not op.moze_pokracovat_teraz %}
                               disabled
@@ -149,7 +159,10 @@
                   
                   {% elif op.stav == 'hotova' %}
                     {% if op.moze_pokracovat_teraz %}
-                      <button type="submit" name="akcia" value="pokracovat" 
+                      <button type="button"
+                              data-op-action="start"
+                              data-objednavka-id="{{ zakazka.pk }}"
+                              data-operacia-id="{{ op.id }}"
                               class="btn btn-info btn-sm"
                               title="Objednávke ešte chýbajú OK kusy - pokračujte v operácii">
                         🔄 Pokračovať
@@ -265,7 +278,10 @@
             <input type="hidden" name="operacia_id" value="{{ op.id }}">
 
             {% if op.stav == 'caka' %}
-              <button type="submit" name="akcia" value="zacat"
+              <button type="button"
+                      data-op-action="start"
+                      data-objednavka-id="{{ zakazka.pk }}"
+                      data-operacia-id="{{ op.id }}"
                       class="btn btn-success"
                       {% if not op.moze_zacat_teraz %}
                         disabled
@@ -275,7 +291,11 @@
               </button>
 
             {% elif op.stav == 'vyroba' %}
-              <button type="submit" name="akcia" value="pauza" class="btn btn-warning">
+              <button type="button"
+                      data-op-action="pause"
+                      data-objednavka-id="{{ zakazka.pk }}"
+                      data-operacia-id="{{ op.id }}"
+                      class="btn btn-warning">
                 ⏸ Pauza
               </button>
               <button type="button" class="btn btn-primary"
@@ -284,7 +304,10 @@
               </button>
 
             {% elif op.stav == 'pozastavena' %}
-              <button type="submit" name="akcia" value="pokracovat"
+              <button type="button"
+                      data-op-action="start"
+                      data-objednavka-id="{{ zakazka.pk }}"
+                      data-operacia-id="{{ op.id }}"
                       class="btn btn-info"
                       {% if not op.moze_pokracovat_teraz %}
                         disabled
@@ -295,7 +318,10 @@
 
             {% elif op.stav == 'hotova' %}
               {% if op.moze_pokracovat_teraz %}
-                <button type="submit" name="akcia" value="pokracovat"
+                <button type="button"
+                        data-op-action="start"
+                        data-objednavka-id="{{ zakazka.pk }}"
+                        data-operacia-id="{{ op.id }}"
                         class="btn btn-info"
                         title="Objednávke ešte chýbajú OK kusy - pokračujte v operácii">
                   🔄 Pokračovať
@@ -505,14 +531,167 @@
 </div>
 
 <script>
+function getCookie(name) {
+  let cookieValue = null;
+  if (document.cookie && document.cookie !== '') {
+    const cookies = document.cookie.split(';');
+    for (let i = 0; i < cookies.length; i++) {
+      const cookie = cookies[i].trim();
+      if (cookie.substring(0, name.length + 1) === (name + '=')) {
+        cookieValue = decodeURIComponent(cookie.substring(name.length + 1));
+        break;
+      }
+    }
+  }
+  return cookieValue;
+}
+
+async function apiPost(url, body, isFormData = false) {
+  const headers = { 'X-CSRFToken': getCookie('csrftoken') };
+  if (!isFormData) {
+    headers['Content-Type'] = 'application/json';
+  }
+
+  const response = await fetch(url, {
+    method: 'POST',
+    headers,
+    body: isFormData ? body : JSON.stringify(body || {}),
+  });
+
+  let data = null;
+  try {
+    data = await response.json();
+  } catch (_) {
+    data = { status: 'error', message: 'Neplatná odpoveď servera.' };
+  }
+
+  if (!response.ok && data.status !== 'error') {
+    return {
+      status: 'error',
+      message: data.message || `HTTP ${response.status}`,
+    };
+  }
+
+  return data;
+}
+
+function showOperatorMessage(message, type = 'success') {
+  const existing = document.getElementById('operatorApiAlert');
+  if (existing) {
+    existing.remove();
+  }
+
+  const wrapper = document.createElement('div');
+  wrapper.id = 'operatorApiAlert';
+  wrapper.className = `alert alert-${type} mb-3`;
+  wrapper.setAttribute('role', 'alert');
+  wrapper.textContent = message;
+
+  const container = document.querySelector('.container');
+  if (container) {
+    container.prepend(wrapper);
+  }
+}
+
+async function handleOperationAction(action, objednavkaId, operaciaId, triggerButton = null) {
+  const opUrlMap = {
+    start: `/api/operator/start/${objednavkaId}/${operaciaId}/`,
+    pause: `/api/operator/pause/${objednavkaId}/${operaciaId}/`,
+  };
+
+  if (!opUrlMap[action]) {
+    showOperatorMessage('Neznáma akcia operácie.', 'danger');
+    return;
+  }
+
+  let payload = {};
+  if (action === 'pause') {
+    const dovod = prompt('Zadaj dôvod pauzy:');
+    if (!dovod) {
+      return;
+    }
+    payload = { dovod };
+  }
+
+  const canLockButton = triggerButton && triggerButton.tagName === 'BUTTON' && triggerButton.dataset.opAction;
+  const originalLabel = canLockButton ? triggerButton.textContent : null;
+
+  if (canLockButton) {
+    triggerButton.disabled = true;
+    triggerButton.textContent = '⏳';
+  }
+
+  try {
+    const data = await apiPost(opUrlMap[action], payload);
+    if (data.status === 'ok') {
+      showOperatorMessage(data.message || 'Akcia bola úspešne vykonaná.', 'success');
+      const refreshed = await refreshOperationsCard();
+      if (!refreshed) {
+        window.location.reload();
+      }
+      return;
+    }
+
+    showOperatorMessage(data.message || 'Nepodarilo sa vykonať akciu.', 'danger');
+  } catch (error) {
+    showOperatorMessage(`Chyba siete: ${error.message}`, 'danger');
+  } finally {
+    if (canLockButton) {
+      triggerButton.disabled = false;
+      triggerButton.textContent = originalLabel;
+    }
+  }
+}
+
+window.handleOperationAction = handleOperationAction;
+
+async function refreshOperationsCard() {
+  try {
+    const response = await fetch(window.location.href, {
+      headers: { 'X-Requested-With': 'XMLHttpRequest' },
+      cache: 'no-store',
+    });
+
+    if (!response.ok) {
+      return false;
+    }
+
+    const html = await response.text();
+    const parser = new DOMParser();
+    const doc = parser.parseFromString(html, 'text/html');
+    const nextCard = doc.getElementById('operacieCard');
+    const currentCard = document.getElementById('operacieCard');
+
+    if (!nextCard || !currentCard) {
+      return false;
+    }
+
+    currentCard.replaceWith(nextCard);
+    return true;
+  } catch (_) {
+    return false;
+  }
+}
+
+document.addEventListener('click', function (event) {
+  const button = event.target.closest('button[data-op-action]');
+  if (!button) return;
+
+  const action = button.dataset.opAction;
+  const objednavkaId = Number(button.dataset.objednavkaId);
+  const operaciaId = Number(button.dataset.operaciaId);
+
+  if (!action || Number.isNaN(objednavkaId) || Number.isNaN(operaciaId)) {
+    showOperatorMessage('Neplatné dáta akcie operácie.', 'danger');
+    return;
+  }
+
+  handleOperationAction(action, objednavkaId, operaciaId, button);
+});
+
 (function () {
   const formKK = document.getElementById('formKontrolaKvality');
   if (!formKK) return;
-
-  function getCsrf() {
-    const cookieEntry = document.cookie.split(';').find(s => s.trim().startsWith('csrftoken='));
-    return cookieEntry ? decodeURIComponent(cookieEntry.trim().split('=')[1]) : '';
-  }
 
   formKK.addEventListener('submit', function (e) {
     e.preventDefault();
@@ -523,17 +702,12 @@
 
     const fd = new FormData(formKK);
 
-    fetch('/api/operator/kontrola-kvality/{{ zakazka.pk }}/', {
-      method: 'POST',
-      headers: { 'X-CSRFToken': getCsrf() },
-      body: fd,
-    })
-    .then(r => r.json())
+    apiPost('/api/operator/kontrola-kvality/{{ zakazka.pk }}/', fd, true)
     .then(data => {
       alert.classList.remove('d-none', 'alert-danger', 'alert-success', 'alert-warning');
       if (data.status === 'ok') {
         alert.classList.add('alert-success');
-        alert.textContent = data.message;
+        alert.textContent = data.message || 'Kontrola kvality bola uložená.';
         // Mark step 1 done
         document.getElementById('cardKontrolaKvality').classList.remove('border-primary');
         document.getElementById('cardKontrolaKvality').classList.add('border-success');
@@ -551,7 +725,7 @@
         }
       } else {
         alert.classList.add('alert-danger');
-        alert.textContent = data.message;
+        alert.textContent = data.message || 'Nepodarilo sa uložiť kontrolu kvality.';
         btn.disabled = false;
         btn.textContent = '🔬 Uložiť kontrolu kvality';
       }

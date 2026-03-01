@@ -354,6 +354,59 @@ class EndWorkWarehouseTest(TestCase):
         self.assertEqual(PrijemkaHotovychDielov.objects.filter(objednavka=self.obj).count(), 0)
 
 
+class OperatorApiValidationTest(TestCase):
+    def setUp(self):
+        self.user = User.objects.create_user('op_api_valid', password='pass')
+        self.produkt = _produkt('T-OP-API-001')
+        self.obj = _objednavka(produkt=self.produkt, mnozstvo=10)
+        self.obj.priradeni_operatori.add(self.user)
+        self.operacia = _operacia_vyroby(self.obj, stav='vyroba', vyrobene_kusy=0)
+        self.client = Client()
+        self.client.force_login(self.user)
+
+    def test_pause_operation_invalid_json_returns_error(self):
+        url = reverse('pause_operation', kwargs={
+            'objednavka_pk': self.obj.pk,
+            'operacia_pk': self.operacia.pk,
+        })
+        resp = self.client.post(
+            url,
+            data='{"dovod": "ok"',
+            content_type='application/json',
+        )
+        self.assertEqual(resp.status_code, 200)
+        data = resp.json()
+        self.assertEqual(data['status'], 'error')
+
+    def test_end_work_invalid_integer_returns_error(self):
+        url = reverse('end_work', kwargs={'pk': self.obj.pk})
+        resp = self.client.post(url, {'pocet_ok': 'abc'})
+        self.assertEqual(resp.status_code, 200)
+        data = resp.json()
+        self.assertEqual(data['status'], 'error')
+
+    def test_report_problem_negative_count_returns_error(self):
+        url = reverse('report_problem', kwargs={'pk': self.obj.pk})
+        resp = self.client.post(
+            url,
+            {
+                'typ_problemu': 'NEPODAROK',
+                'pocet_kusov': -1,
+                'popis': 'Test popis',
+            },
+        )
+        self.assertEqual(resp.status_code, 200)
+        data = resp.json()
+        self.assertEqual(data['status'], 'error')
+
+    def test_report_problem_invalid_json_returns_error(self):
+        url = reverse('report_problem', kwargs={'pk': self.obj.pk})
+        resp = self.client.post(url, data='{invalid', content_type='application/json')
+        self.assertEqual(resp.status_code, 200)
+        data = resp.json()
+        self.assertEqual(data['status'], 'error')
+
+
 class NaskladniHotoveDielAvoidDoubleCountTest(TestCase):
     """_naskladni_hotove_diely skips pieces already received via end_work."""
 
