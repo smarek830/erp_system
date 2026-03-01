@@ -6,7 +6,7 @@ from .models import (
     Stroj, Produkt, Operacia, Objednavka, Kontrakt, VyrobnaDavka,
     VyrobnyZaznam, KontrolaKvality, HlasenieVyroby, Material,
     PrijemkaNaSklad, VydajkaZoSkladu, KontrolnyParameter,
-    MeraniePriKontrole, Sprievodka, SkladHotovychDielov, PrijemkaHotovychDielov, VydajkaHotovychDielov
+    MeraniePriKontrole, Sprievodka, OperaciaVyroby, SkladHotovychDielov, PrijemkaHotovychDielov, VydajkaHotovychDielov
 )
 
 # ===== INLINE ADMINS =====
@@ -226,6 +226,12 @@ admin.site.register(VydajkaZoSkladu)
 admin.site.register(KontrolnyParameter)
 admin.site.register(MeraniePriKontrole)
 admin.site.register(Sprievodka)
+
+@admin.register(OperaciaVyroby)
+class OperaciaVyrobyAdmin(admin.ModelAdmin):
+    list_display = ('objednavka', 'poradie', 'nazov_operacie', 'stroj', 'operator', 'stav', 'vyrobene_kusy', 'nepodarky')
+    list_filter = ('stav', 'stroj', 'objednavka__zakaznik')
+    search_fields = ('objednavka__cislo_objednavky', 'nazov_operacie', 'objednavka__zakaznik')
 
 @admin.register(KontrolaKvality)
 class KontrolaKvalityAdmin(admin.ModelAdmin):
