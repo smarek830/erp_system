@@ -1,5 +1,5 @@
 :root {
-    --app-bg: #f8f9fa;
+    --app-bg: var(--bs-body-bg, #f8f9fa);
     --app-font: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
     --container-max-width: 1200px;
     --container-side-padding: 16px;
@@ -9,6 +9,7 @@
 body {
     font-family: var(--app-font);
     background-color: var(--app-bg);
+    color: var(--bs-body-color);
 }
 
 .navbar {
@@ -29,6 +30,63 @@ body {
 
 .page-header {
     gap: 0.5rem;
+}
+
+.page-actions {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 0.5rem;
+    justify-content: flex-start;
+}
+
+.table-clean thead th {
+    font-size: 0.85rem;
+    text-transform: uppercase;
+    letter-spacing: 0.02em;
+    white-space: nowrap;
+}
+
+.table-clean td,
+.table-clean th {
+    vertical-align: middle;
+}
+
+.table-sticky thead th {
+    position: sticky;
+    top: 0;
+    z-index: 1;
+}
+
+.card-soft {
+    border: 1px solid var(--bs-border-color-translucent);
+}
+
+[data-bs-theme="dark"] .version-badge {
+    color: var(--bs-secondary-color);
+}
+
+[data-bs-theme="dark"] footer.bg-light {
+    background-color: var(--bs-tertiary-bg) !important;
+    border-top: 1px solid var(--bs-border-color-translucent);
+}
+
+[data-bs-theme="dark"] .table-clean thead th {
+    color: var(--bs-secondary-color);
+}
+
+#themeToggleBtn {
+    min-width: 96px;
+}
+
+[data-bs-theme="dark"] #themeToggleBtn {
+    border-color: rgba(255, 255, 255, 0.35);
+    color: #f8f9fa;
+}
+
+[data-bs-theme="dark"] #themeToggleBtn:hover,
+[data-bs-theme="dark"] #themeToggleBtn:focus {
+    background-color: rgba(255, 255, 255, 0.12);
+    border-color: rgba(255, 255, 255, 0.5);
 }
 
 @media (max-width: 767.98px) {
@@ -57,5 +115,18 @@ body {
 
     .btn {
         min-height: 42px;
+    }
+
+    .page-actions {
+        width: 100%;
+    }
+
+    .page-actions .btn {
+        flex: 1 1 auto;
+    }
+
+    #themeToggleBtn {
+        width: 100%;
+        margin-bottom: 0.35rem;
     }
 }

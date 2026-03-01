@@ -1,9 +1,11 @@
 {% extends 'core/base.html' %}
 
+{% block page_title %}🏭 Plán výroby{% endblock %}
+
 {% block content %}
-<div class="d-flex justify-content-between align-items-center mb-4">
-    <h1 class="h3 mb-0">🏭 Plán výroby</h1>
-    <div class="btn-group" role="group">
+<div class="d-flex flex-column flex-lg-row justify-content-between align-items-start align-items-lg-center gap-2 mb-4">
+    <p class="text-muted mb-0">Prehľad aktívnych kontraktov a zakázok s prioritizáciou podľa termínu.</p>
+    <div class="page-actions" role="group" aria-label="Akcie plánu výroby">
         <a href="{% url 'export_plan_excel' %}" class="btn btn-success btn-sm">
             📊 Export Excel
         </a>
@@ -17,7 +19,7 @@
 </div>
 
 <!-- VYHĽADÁVACÍ A FILTROVACÍ PANEL -->
-<div class="card shadow-sm mb-4">
+<div class="card card-soft shadow-sm mb-4">
     <div class="card-body">
         <form method="get" action="{% url 'plan_vyroby' %}" class="row g-3">
             <div class="col-md-4">
@@ -68,7 +70,7 @@
         <div class="card shadow-sm">
             <div class="card-body p-0">
                 <div class="table-responsive">
-                    <table class="table table-hover mb-0 align-middle">
+                    <table class="table table-hover mb-0 align-middle table-clean table-sticky">
                         <thead class="table-primary">
                             <tr>
                                 <th>Číslo kontraktu</th>
@@ -162,10 +164,10 @@
             <span class="badge bg-success fs-6">{{ zakazky.count }} aktívnych</span>
         </div>
         
-        <div class="card shadow-sm">
+        <div class="card card-soft shadow-sm">
             <div class="card-body p-0">
                 <div class="table-responsive">
-                    <table class="table table-hover mb-0 align-middle">
+                    <table class="table table-hover mb-0 align-middle table-clean table-sticky">
                         <thead class="table-success">
                             <tr>
                                 <th>Termín</th>

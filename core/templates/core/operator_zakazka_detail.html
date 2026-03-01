@@ -5,6 +5,14 @@
 
 {% block content %}
 <style>
+  .operator-back-btn {
+    min-width: 220px;
+  }
+
+  .operator-kpi h5 {
+    font-size: 0.9rem;
+  }
+
   @media (prefers-reduced-motion: reduce) {
     #operacieLoadingOverlay .spinner-border {
       animation: none !important;
@@ -14,23 +22,29 @@
       transition: none !important;
     }
   }
+
+  @media (max-width: 767.98px) {
+    .operator-back-btn {
+      min-width: 100%;
+    }
+  }
 </style>
 
 <div class="container px-0 px-md-2 py-2 py-md-4">
   
   <!-- Tlačidlo späť -->
-  <a href="{% url 'operator_dashboard' %}" class="btn btn-outline-secondary btn-sm mb-3 w-100">
+  <a href="{% url 'operator_dashboard' %}" class="btn btn-outline-secondary btn-sm mb-3 operator-back-btn">
     ← Späť na dashboard
   </a>
 
   <!-- Hlavička zakázky -->
-  <div class="card mb-4 position-relative" id="operacieCard">
+  <div class="card card-soft mb-4 position-relative" id="operacieCard">
     <div class="card-header bg-primary text-white">
       <h4 class="mb-0">⚙️ Zakázka #{{ zakazka.cislo_objednavky }}</h4>
       <small>{{ zakazka.zakaznik }} - {{ zakazka.produkt.nazov }}</small>
     </div>
     <div class="card-body">
-      <div class="row text-center g-3">
+      <div class="row text-center g-3 operator-kpi">
         <div class="col-6 col-md-2">
           <h5 class="text-muted mb-1">Požadované</h5>
           <h3>{{ zakazka.mnozstvo }} ks</h3>
@@ -73,7 +87,7 @@
   </div>
 
   <!-- Kontrola kvality + uzavretie -->
-  <div class="card border-primary mb-3" id="cardKontrolaKvality">
+  <div class="card card-soft border-primary mb-3" id="cardKontrolaKvality">
       <div class="card-header bg-primary text-white">
         <h5 class="mb-0">🔬 Priebežná kontrola kvality (po smene / dávke)</h5>
       </div>
@@ -176,7 +190,7 @@
 
   {% if moze_uzavriet %}
     <!-- Krok 2: Uzavretie zakázky -->
-    <div class="card border-success" id="cardUzavretie">
+    <div class="card card-soft border-success" id="cardUzavretie">
       <div class="card-body">
         <h5 class="card-title text-success">✅ Krok 2: Uzavrieť zakázku</h5>
         <p class="card-text text-muted small">Všetky operácie sú hotové a potrebné množstvo bolo vyrobené. Pri uzavretí je povinná finálna fotka balenia.</p>
