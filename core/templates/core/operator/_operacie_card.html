@@ -1,4 +1,14 @@
 <div class="card mb-4 position-relative" id="operacieCard">
+  <div
+    data-operator-metrics="1"
+    data-pozadovane="{{ zakazka.mnozstvo }}"
+    data-ok-final="{{ zakazka.celkom_ok_kusy }}"
+    data-nok="{{ zakazka.celkom_nok_kusy }}"
+    data-zostava="{{ zakazka.zostava_vyroba }}"
+    data-celkom-vyrobit="{{ zakazka.potrebne_kusy_celkom }}"
+    data-can-close="{% if moze_uzavriet %}1{% else %}0{% endif %}"
+    class="d-none"
+  ></div>
   <div class="card-header bg-secondary text-white">
     <h5 class="mb-0">📋 Operácie (postupne zhora dole)</h5>
   </div>
@@ -46,6 +56,9 @@
                 <span class="badge bg-secondary" data-op-status-badge="1" data-operacia-id="{{ op.id }}">⏳ Čaká</span>
               {% elif op.stav == 'vyroba' %}
                 <span class="badge bg-warning text-dark" data-op-status-badge="1" data-operacia-id="{{ op.id }}">⚙️ V práci</span>
+                {% if op.aktivny_operator_username %}
+                  <div><small class="text-muted">Aktívny: {{ op.aktivny_operator_username }}</small></div>
+                {% endif %}
               {% elif op.stav == 'hotova' %}
                 <span class="badge bg-success" data-op-status-badge="1" data-operacia-id="{{ op.id }}">✅ Hotová</span>
               {% elif op.stav == 'pozastavena' %}
@@ -71,17 +84,28 @@
                   </button>
 
                 {% elif op.stav == 'vyroba' %}
-                  <button type="button"
-                          data-op-action="pause"
-                          data-objednavka-id="{{ zakazka.pk }}"
-                          data-operacia-id="{{ op.id }}"
-                          class="btn btn-warning btn-sm">
-                    ⏸ Pauza
-                  </button>
-                  <button type="button" class="btn btn-primary btn-sm"
-                          data-bs-toggle="modal" data-bs-target="#ukonciModalDesktop{{ op.id }}">
-                    🔴 Ukončiť dávku
-                  </button>
+                  {% if op.je_aktivny_operator or not op.aktivny_operator_id %}
+                    <button type="button"
+                            data-op-action="pause"
+                            data-objednavka-id="{{ zakazka.pk }}"
+                            data-operacia-id="{{ op.id }}"
+                            class="btn btn-warning btn-sm">
+                      ⏸ Pauza
+                    </button>
+                    <button type="button" class="btn btn-primary btn-sm"
+                            data-bs-toggle="modal" data-bs-target="#ukonciModalDesktop{{ op.id }}">
+                      🔴 Ukončiť dávku
+                    </button>
+                  {% else %}
+                    <button type="button"
+                            data-op-action="takeover"
+                            data-objednavka-id="{{ zakazka.pk }}"
+                            data-operacia-id="{{ op.id }}"
+                            class="btn btn-outline-warning btn-sm"
+                            title="Prevziať rozpracovanú operáciu od iného operátora">
+                      🔁 Prevziať
+                    </button>
+                  {% endif %}
 
                 {% elif op.stav == 'pozastavena' %}
                   <button type="button"
@@ -205,6 +229,9 @@
             <span class="badge bg-secondary" data-op-status-badge="1" data-operacia-id="{{ op.id }}">⏳ Čaká</span>
           {% elif op.stav == 'vyroba' %}
             <span class="badge bg-warning text-dark" data-op-status-badge="1" data-operacia-id="{{ op.id }}">⚙️ V práci</span>
+            {% if op.aktivny_operator_username %}
+              <span class="badge bg-dark-subtle text-dark-emphasis">👤 {{ op.aktivny_operator_username }}</span>
+            {% endif %}
           {% elif op.stav == 'hotova' %}
             <span class="badge bg-success" data-op-status-badge="1" data-operacia-id="{{ op.id }}">✅ Hotová</span>
           {% elif op.stav == 'pozastavena' %}
@@ -230,17 +257,28 @@
             </button>
 
           {% elif op.stav == 'vyroba' %}
-            <button type="button"
-                    data-op-action="pause"
-                    data-objednavka-id="{{ zakazka.pk }}"
-                    data-operacia-id="{{ op.id }}"
-                    class="btn btn-warning">
-              ⏸ Pauza
-            </button>
-            <button type="button" class="btn btn-primary"
-                    data-bs-toggle="modal" data-bs-target="#ukonciModalMobile{{ op.id }}">
-              🔴 Ukončiť dávku
-            </button>
+            {% if op.je_aktivny_operator or not op.aktivny_operator_id %}
+              <button type="button"
+                      data-op-action="pause"
+                      data-objednavka-id="{{ zakazka.pk }}"
+                      data-operacia-id="{{ op.id }}"
+                      class="btn btn-warning">
+                ⏸ Pauza
+              </button>
+              <button type="button" class="btn btn-primary"
+                      data-bs-toggle="modal" data-bs-target="#ukonciModalMobile{{ op.id }}">
+                🔴 Ukončiť dávku
+              </button>
+            {% else %}
+              <button type="button"
+                      data-op-action="takeover"
+                      data-objednavka-id="{{ zakazka.pk }}"
+                      data-operacia-id="{{ op.id }}"
+                      class="btn btn-outline-warning"
+                      title="Prevziať rozpracovanú operáciu od iného operátora">
+                🔁 Prevziať
+              </button>
+            {% endif %}
 
           {% elif op.stav == 'pozastavena' %}
             <button type="button"

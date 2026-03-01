@@ -142,6 +142,23 @@ class KontrolnyParameterToleranciaTest(TestCase):
         self.assertFalse(self._meranie('9.899').je_v_tolerancii())
 
 
+class ProduktEditPageRenderTest(TestCase):
+    def test_upravit_produkt_page_renders_for_user_with_permission(self):
+        user = User.objects.create_user('edit_produkt_user', password='pass')
+        perm = Permission.objects.get(codename='change_produkt')
+        user.user_permissions.add(perm)
+
+        produkt = _produkt('T-EDIT-PAGE-001')
+
+        client = Client()
+        client.force_login(user)
+
+        url = reverse('upravit_produkt', kwargs={'pk': produkt.pk})
+        resp = client.get(url)
+
+        self.assertEqual(resp.status_code, 200)
+        self.assertIn('Upraviť produkt', resp.content.decode('utf-8'))
+
 # ---------------------------------------------------------------------------
 # View / API tests
 # ---------------------------------------------------------------------------
@@ -437,6 +454,124 @@ class OperatorEndBatchApiTest(TestCase):
         self.assertEqual(resp.status_code, 200)
         data = resp.json()
         self.assertEqual(data['status'], 'error')
+
+
+class OperatorTakeoverApiTest(TestCase):
+    def setUp(self):
+        from .models import OperatorNaOperacii
+
+        self.op1 = User.objects.create_user('op_takeover_1', password='pass')
+        self.op2 = User.objects.create_user('op_takeover_2', password='pass')
+        self.produkt = _produkt('T-TAKEOVER-001')
+        self.obj = _objednavka(produkt=self.produkt, mnozstvo=10)
+        self.obj.priradeni_operatori.add(self.op1, self.op2)
+        self.operacia = _operacia_vyroby(self.obj, stav='vyroba', vyrobene_kusy=0)
+        self.operacia.operator = self.op1
+        self.operacia.save(update_fields=['operator'])
+
+        OperatorNaOperacii.objects.create(
+            operacia=self.operacia,
+            operator=self.op1,
+            cas_zaciatku=timezone.now() - timedelta(minutes=30),
+        )
+
+        self.client = Client()
+        self.client.force_login(self.op2)
+
+    def test_takeover_switches_active_operator(self):
+        from .models import OperatorNaOperacii
+
+        url = reverse('take_over_operation', kwargs={
+            'objednavka_pk': self.obj.pk,
+            'operacia_pk': self.operacia.pk,
+        })
+        resp = self.client.post(url)
+        self.assertEqual(resp.status_code, 200)
+        data = resp.json()
+        self.assertEqual(data['status'], 'ok')
+
+        self.operacia.refresh_from_db()
+        self.assertEqual(self.operacia.operator_id, self.op2.id)
+
+        old_session = OperatorNaOperacii.objects.filter(operacia=self.operacia, operator=self.op1).first()
+        self.assertIsNotNone(old_session.cas_konca)
+
+        new_session = OperatorNaOperacii.objects.filter(
+            operacia=self.operacia,
+            operator=self.op2,
+            cas_konca__isnull=True,
+        ).first()
+        self.assertIsNotNone(new_session)
+
+    def test_end_batch_requires_takeover_when_other_operator_active(self):
+        url = reverse('end_batch', kwargs={
+            'objednavka_pk': self.obj.pk,
+            'operacia_pk': self.operacia.pk,
+        })
+        resp = self.client.post(url, {'vyrobene_kusy': 1, 'nepodarky': 0})
+        self.assertEqual(resp.status_code, 200)
+        data = resp.json()
+        self.assertEqual(data['status'], 'error')
+        self.assertIn('Najprv ju prevezmite', data['message'])
+
+    def test_end_batch_after_takeover_counts_productivity_for_new_operator(self):
+        from .models import OperatorNaOperacii
+
+        takeover_url = reverse('take_over_operation', kwargs={
+            'objednavka_pk': self.obj.pk,
+            'operacia_pk': self.operacia.pk,
+        })
+        takeover_resp = self.client.post(takeover_url)
+        self.assertEqual(takeover_resp.status_code, 200)
+        self.assertEqual(takeover_resp.json()['status'], 'ok')
+
+        end_batch_url = reverse('end_batch', kwargs={
+            'objednavka_pk': self.obj.pk,
+            'operacia_pk': self.operacia.pk,
+        })
+        end_resp = self.client.post(end_batch_url, {'vyrobene_kusy': 2, 'nepodarky': 0})
+        self.assertEqual(end_resp.status_code, 200)
+        self.assertEqual(end_resp.json()['status'], 'ok')
+
+        session = OperatorNaOperacii.objects.filter(
+            operacia=self.operacia,
+            operator=self.op2,
+        ).order_by('-cas_zaciatku').first()
+        self.assertIsNotNone(session)
+        self.assertEqual(session.vyrobene_kusy, 2)
+        self.assertIsNotNone(session.cas_konca)
+
+
+class OperatorClaimInProgressOrderTest(TestCase):
+    def setUp(self):
+        self.marek = User.objects.create_user('marek_claim', password='pass')
+        self.jozef = User.objects.create_user('jozef_claim', password='pass')
+        self.produkt = _produkt('T-CLAIM-001')
+        self.obj = _objednavka(produkt=self.produkt, mnozstvo=10)
+        self.obj.stav = 'vyroba'
+        self.obj.save(update_fields=['stav'])
+        self.obj.priradeni_operatori.add(self.jozef)
+        _operacia_vyroby(self.obj, stav='vyroba', vyrobene_kusy=1)
+
+    def test_dashboard_lists_in_progress_takeover_candidates(self):
+        client = Client()
+        client.force_login(self.marek)
+        resp = client.get(reverse('operator_dashboard'))
+        self.assertEqual(resp.status_code, 200)
+        self.assertContains(resp, 'Rozpracované na prevzatie')
+        self.assertContains(resp, self.obj.cislo_objednavky)
+
+    def test_prevziat_zakazku_allows_claim_for_in_progress_order(self):
+        client = Client()
+        client.force_login(self.marek)
+        url = reverse('operator_prevziat_zakazku', kwargs={'pk': self.obj.pk})
+        resp = client.post(url)
+        self.assertEqual(resp.status_code, 200)
+        data = resp.json()
+        self.assertEqual(data['status'], 'ok')
+
+        self.obj.refresh_from_db()
+        self.assertIn(self.marek, self.obj.priradeni_operatori.all())
 
 
 class OperatorCloseOrderApiTest(TestCase):

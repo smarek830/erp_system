@@ -13,6 +13,19 @@
     font-size: 0.9rem;
   }
 
+  .stat-flash {
+    color: #20c997 !important;
+    transform: scale(1.05);
+    transition: color 0.25s ease, transform 0.25s ease;
+  }
+
+  @media (prefers-reduced-motion: reduce) {
+    .stat-flash {
+      transition: none !important;
+      transform: none !important;
+    }
+  }
+
   @media (prefers-reduced-motion: reduce) {
     #operacieLoadingOverlay .spinner-border {
       animation: none !important;
@@ -31,11 +44,13 @@
 </style>
 
 <div class="container px-0 px-md-2 py-2 py-md-4">
+  <div id="orderStateFlags" data-can-close="{% if moze_uzavriet %}1{% else %}0{% endif %}" class="d-none"></div>
   
   <!-- Tlačidlo späť -->
   <a href="{% url 'operator_dashboard' %}" class="btn btn-outline-secondary btn-sm mb-3 operator-back-btn">
     ← Späť na dashboard
   </a>
+  <div id="operatorLiveSyncInfo" class="small text-muted mb-2">🔄 Live sync: čakám na prvú aktualizáciu…</div>
 
   <!-- Hlavička zakázky -->
   <div class="card card-soft mb-4 position-relative" id="operacieCard">
@@ -47,35 +62,35 @@
       <div class="row text-center g-3 operator-kpi">
         <div class="col-6 col-md-2">
           <h5 class="text-muted mb-1">Požadované</h5>
-          <h3>{{ zakazka.mnozstvo }} ks</h3>
+          <h3><span id="statPozadovane">{{ zakazka.mnozstvo }}</span> ks</h3>
         </div>
         <div class="col-6 col-md-2">
           <h5 class="text-muted mb-1">
             OK finálne
             <span class="ms-1" title="Počet OK kusov z poslednej operácie. V medzioperáciách môže byť viac kusov, ktoré ešte neprešli celým procesom.">ℹ️</span>
           </h5>
-          <h3 class="text-success">{{ zakazka.celkom_ok_kusy }} ks</h3>
+          <h3 class="text-success"><span id="statOkFinal">{{ zakazka.celkom_ok_kusy }}</span> ks</h3>
           <small class="text-muted">z poslednej operácie</small>
         </div>
         <div class="col-6 col-md-2">
           <h5 class="text-muted mb-1">NOK kusy</h5>
-          <h3 class="text-danger">{{ zakazka.celkom_nok_kusy }} ks</h3>
+          <h3 class="text-danger"><span id="statNok">{{ zakazka.celkom_nok_kusy }}</span> ks</h3>
         </div>
         <div class="col-6 col-md-2">
           <h5 class="text-muted mb-1">Zostáva OK</h5>
-          <h3 class="text-warning">{{ zakazka.zostava_vyroba }} ks</h3>
+          <h3 class="text-warning"><span id="statZostava">{{ zakazka.zostava_vyroba }}</span> ks</h3>
         </div>
         <div class="col-6 col-md-2">
           <h5 class="text-muted mb-1">
             Celkom vyrobiť
             <span class="ms-1" title="Požadované kusy + priebežne vzniknuté NOK kusy (kompenzácia), aby sa dosiahol cieľový počet OK kusov.">ℹ️</span>
           </h5>
-          <h3 class="text-info">{{ zakazka.potrebne_kusy_celkom }} ks</h3>
+          <h3 class="text-info"><span id="statCelkomVyrobit">{{ zakazka.potrebne_kusy_celkom }}</span> ks</h3>
           <small class="text-muted">požadované + kompenzácia NOK</small>
         </div>
         <div class="col-6 col-md-2">
           <h5 class="text-muted mb-1">Termín</h5>
-          <h3 class="{% if zakazka.datum_pozadovane < dnes %}text-danger{% endif %}">
+          <h3 id="statTermin" class="{% if zakazka.datum_pozadovane < dnes %}text-danger{% endif %}">
             {{ zakazka.datum_pozadovane|date:"d.m.Y" }}
           </h3>
         </div>
@@ -290,6 +305,24 @@ async function apiPost(url, body, isFormData = false, timeoutMs = 15000) {
 }
 
 const formSubmitLocks = new WeakSet();
+let lockedFormCount = 0;
+
+function lockForm(formEl) {
+  if (formSubmitLocks.has(formEl)) {
+    return false;
+  }
+  formSubmitLocks.add(formEl);
+  lockedFormCount += 1;
+  return true;
+}
+
+function unlockForm(formEl) {
+  if (!formSubmitLocks.has(formEl)) {
+    return;
+  }
+  formSubmitLocks.delete(formEl);
+  lockedFormCount = Math.max(0, lockedFormCount - 1);
+}
 
 function showOperatorMessage(message, type = 'success') {
   const titleMap = {
@@ -417,6 +450,7 @@ function applyOptimisticOperationState(action, operaciaId, stavOperacie = null) 
 async function handleOperationAction(action, objednavkaId, operaciaId, triggerButton = null) {
   const opUrlMap = {
     start: `/api/operator/start/${objednavkaId}/${operaciaId}/`,
+    takeover: `/api/operator/takeover/${objednavkaId}/${operaciaId}/`,
     pause: `/api/operator/pause/${objednavkaId}/${operaciaId}/`,
   };
 
@@ -497,6 +531,7 @@ async function refreshOperationsCard(focusHint = null) {
     }
 
     mount.innerHTML = html;
+  applyOrderMetricsFromFragment(mount);
 
     if (mountTopBefore !== null) {
       const mountTopAfter = mount.getBoundingClientRect().top;
@@ -522,6 +557,49 @@ async function refreshOperationsCard(focusHint = null) {
     return false;
   } finally {
     setOperationsLoading(false);
+  }
+}
+
+function applyOrderMetricsFromFragment(mount) {
+  if (!mount) return;
+  const metrics = mount.querySelector('[data-operator-metrics="1"]');
+  if (!metrics) return;
+
+  const setText = (id, value, flash = true) => {
+    const el = document.getElementById(id);
+    if (el && value !== undefined && value !== null) {
+      const oldValue = (el.textContent || '').trim();
+      const nextValue = String(value);
+      el.textContent = nextValue;
+      if (flash && oldValue !== '' && oldValue !== nextValue) {
+        el.classList.add('stat-flash');
+        setTimeout(() => el.classList.remove('stat-flash'), 800);
+      }
+    }
+  };
+
+  setText('statPozadovane', metrics.dataset.pozadovane);
+  setText('statOkFinal', metrics.dataset.okFinal);
+  setText('statNok', metrics.dataset.nok);
+  setText('statZostava', metrics.dataset.zostava);
+  setText('statCelkomVyrobit', metrics.dataset.celkomVyrobit);
+
+  const stateFlags = document.getElementById('orderStateFlags');
+  const nextCanClose = metrics.dataset.canClose || '0';
+  if (stateFlags) {
+    const currentCanClose = stateFlags.dataset.canClose || '0';
+    if (currentCanClose !== nextCanClose) {
+      window.location.reload();
+      return;
+    }
+    stateFlags.dataset.canClose = nextCanClose;
+  }
+
+  const syncInfo = document.getElementById('operatorLiveSyncInfo');
+  if (syncInfo) {
+    const now = new Date();
+    const time = now.toLocaleTimeString('sk-SK', { hour: '2-digit', minute: '2-digit', second: '2-digit' });
+    syncInfo.textContent = `✅ Live sync aktualizované: ${time}`;
   }
 }
 
@@ -568,7 +646,7 @@ document.addEventListener('submit', async function (event) {
 
     const closeButton = closeForm.querySelector('button[type="submit"]');
     const originalCloseLabel = closeButton ? closeButton.textContent : null;
-    formSubmitLocks.add(closeForm);
+    lockForm(closeForm);
     if (closeButton) {
       closeButton.disabled = true;
       closeButton.textContent = '⏳ Uzatváram...';
@@ -590,7 +668,7 @@ document.addEventListener('submit', async function (event) {
     } catch (error) {
       showOperatorMessage(`Chyba siete: ${error.message}`, 'danger');
     } finally {
-      formSubmitLocks.delete(closeForm);
+      unlockForm(closeForm);
       if (closeButton) {
         closeButton.disabled = false;
         closeButton.textContent = originalCloseLabel;
@@ -618,7 +696,7 @@ document.addEventListener('submit', async function (event) {
 
   const submitButton = form.querySelector('button[type="submit"]');
   const originalLabel = submitButton ? submitButton.textContent : null;
-  formSubmitLocks.add(form);
+  lockForm(form);
   if (submitButton) {
     submitButton.disabled = true;
     submitButton.textContent = '⏳ Ukladám...';
@@ -653,7 +731,7 @@ document.addEventListener('submit', async function (event) {
   } catch (error) {
     showOperatorMessage(`Chyba siete: ${error.message}`, 'danger');
   } finally {
-    formSubmitLocks.delete(form);
+    unlockForm(form);
     if (submitButton) {
       submitButton.disabled = false;
       submitButton.textContent = originalLabel;
@@ -675,7 +753,7 @@ document.addEventListener('submit', async function (event) {
     const btn = document.getElementById('btnUlozKontrolu');
     btn.disabled = true;
     btn.textContent = '⏳ Ukladám…';
-    formSubmitLocks.add(formKK);
+    lockForm(formKK);
 
     const fd = new FormData(formKK);
 
@@ -689,7 +767,7 @@ document.addEventListener('submit', async function (event) {
         formKK.reset();
         btn.disabled = false;
         btn.textContent = '🔬 Uložiť ďalší záznam kontroly';
-        formSubmitLocks.delete(formKK);
+        unlockForm(formKK);
         // Update step 2
         const upoz = document.getElementById('upozornenieKontrola');
         if (upoz) upoz.classList.add('d-none');
@@ -703,16 +781,42 @@ document.addEventListener('submit', async function (event) {
         showOperatorMessage(data.message || 'Nepodarilo sa uložiť kontrolu kvality.', 'danger');
         btn.disabled = false;
         btn.textContent = '🔬 Uložiť kontrolu kvality';
-        formSubmitLocks.delete(formKK);
+        unlockForm(formKK);
       }
     })
     .catch(err => {
       showOperatorMessage('Chyba siete: ' + err.message, 'danger');
       btn.disabled = false;
       btn.textContent = '🔬 Uložiť kontrolu kvality';
-      formSubmitLocks.delete(formKK);
+      unlockForm(formKK);
     });
   });
+})();
+
+(function () {
+  const AUTO_SYNC_MS = 8000;
+  let autoSyncInFlight = false;
+
+  setInterval(async () => {
+    if (document.hidden) {
+      return;
+    }
+    if (lockedFormCount > 0 || autoSyncInFlight) {
+      return;
+    }
+    autoSyncInFlight = true;
+    try {
+      const refreshed = await refreshOperationsCard();
+      if (!refreshed) {
+        const syncInfo = document.getElementById('operatorLiveSyncInfo');
+        if (syncInfo) {
+          syncInfo.textContent = '⚠️ Live sync sa nepodaril, skúsim znova…';
+        }
+      }
+    } finally {
+      autoSyncInFlight = false;
+    }
+  }, AUTO_SYNC_MS);
 })();
 </script>
 

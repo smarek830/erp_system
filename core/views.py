@@ -53,17 +53,41 @@ def _get_json_body(request):
     return data if isinstance(data, dict) else None
 
 
+def _get_active_operator_session(operacia):
+    return operacia.operatori.filter(cas_konca__isnull=True).select_related('operator').order_by('-cas_zaciatku').first()
+
+
+def _close_other_open_operator_sessions(operacia, current_user=None):
+    now = timezone.now()
+    queryset = operacia.operatori.filter(cas_konca__isnull=True)
+    if current_user is not None:
+        queryset = queryset.exclude(operator=current_user)
+    queryset.update(cas_konca=now)
+
+
+def _get_or_create_open_operator_session(operacia, operator_user):
+    session = operacia.operatori.filter(
+        operator=operator_user,
+        cas_konca__isnull=True,
+    ).order_by('-cas_zaciatku').first()
+    if session:
+        return session
+    return OperatorNaOperacii.objects.create(
+        operacia=operacia,
+        operator=operator_user,
+        cas_zaciatku=timezone.now(),
+    )
+
+
 def _finish_operation_batch(operacia, operator_user, vyrobene, nepodarky):
+    _close_other_open_operator_sessions(operacia, operator_user)
+    operator_zaznam = _get_or_create_open_operator_session(operacia, operator_user)
+
     operacia.ukonci_davku(vyrobene, nepodarky)
 
-    operator_zaznam = operacia.operatori.filter(
-        operator=operator_user,
-        cas_konca__isnull=True
-    ).first()
-    if operator_zaznam:
-        operator_zaznam.cas_konca = timezone.now()
-        operator_zaznam.vyrobene_kusy += vyrobene
-        operator_zaznam.save()
+    operator_zaznam.cas_konca = timezone.now()
+    operator_zaznam.vyrobene_kusy += vyrobene
+    operator_zaznam.save()
 
     zostava = operacia.get_dostupne_kusy_na_vstupe()
     if operacia.stav == 'hotova':
@@ -720,8 +744,10 @@ def operator_dashboard(request):
     last_30_days = now - timedelta(days=30)
 
     rozpracovane = Objednavka.objects.filter(
-        stav='vyroba', zaznamy__operator=request.user,
-        zaznamy__typ_udalosti='START'
+        stav__in=['vyroba', 'pozastavene']
+    ).filter(
+        Q(priradeni_operatori=request.user)
+        | Q(zaznamy__operator=request.user, zaznamy__typ_udalosti='START')
     ).select_related('produkt').distinct()
 
     for obj in rozpracovane:
@@ -738,6 +764,13 @@ def operator_dashboard(request):
     ).exclude(
         priradeni_operatori__isnull=False
     ).select_related('produkt').order_by('datum_pozadovane')
+
+    rozpracovane_dostupne = Objednavka.objects.filter(
+        stav__in=['vyroba', 'pozastavene'],
+        operacie__stav='vyroba',
+    ).exclude(
+        priradeni_operatori=request.user,
+    ).select_related('produkt').distinct().order_by('datum_pozadovane')
 
     vyrobene_spolu = OperatorNaOperacii.objects.filter(
         operator=request.user
@@ -781,6 +814,7 @@ def operator_dashboard(request):
         'rozpracovane': rozpracovane,
         'nove_priradene': nove_priradene,
         'nove_dostupne': nove_dostupne,
+        'rozpracovane_dostupne': rozpracovane_dostupne,
         'operator_name': operator_name,
         'operator_initials': initials,
         'operator_avatar_url': operator_avatar_url,
@@ -792,6 +826,7 @@ def operator_dashboard(request):
         'aktivne_zakazky': rozpracovane.count(),
         'priradene_cakajuce': nove_priradene.count(),
         'dostupne_nove': nove_dostupne.count(),
+        'dostupne_rozpracovane': rozpracovane_dostupne.count(),
         'posledne_ukony': posledne_ukony,
     })
 
@@ -930,22 +965,28 @@ def operator_zakazka_detail(request, pk):
         
         return redirect('operator_zakazka_detail', pk=pk)
     
-    context = _build_operator_order_detail_context(zakazka)
+    context = _build_operator_order_detail_context(zakazka, request.user)
     
     return render(request, 'core/operator_zakazka_detail.html', context)
 
 
-def _build_operator_order_detail_context(zakazka):
+def _build_operator_order_detail_context(zakazka, current_user=None):
     operacie = zakazka.operacie.all().order_by('poradie')
 
     for op in operacie:
         op.dostupne_kusy = op.get_dostupne_kusy_na_vstupe()
         op.max_kusy = op.get_max_vyrobitelne_kusy()
         op.operatori_list = op.operatori.all()
+        op.aktivny_operator = _get_active_operator_session(op)
+        op.aktivny_operator_id = op.aktivny_operator.operator_id if op.aktivny_operator else None
+        op.aktivny_operator_username = op.aktivny_operator.operator.username if op.aktivny_operator else None
         op.operatori_unikatni = list(dict.fromkeys(
             op.operatori.select_related('operator').values_list('operator__username', flat=True)
         ))
         op.moze_zacat_teraz = op.moze_zacat()
+        op.je_aktivny_operator = bool(
+            current_user and op.aktivny_operator_id and op.aktivny_operator_id == current_user.id
+        )
 
     moze_uzavriet, dovod = zakazka.moze_sa_uzavriet()
 
@@ -970,6 +1011,7 @@ def _build_operacie_fragment_etag(operacie):
             'nepodarky': op.nepodarky,
             'dostupne_kusy': getattr(op, 'dostupne_kusy', None),
             'operatori_unikatni': getattr(op, 'operatori_unikatni', []),
+            'aktivny_operator_id': getattr(op, 'aktivny_operator_id', None),
         })
 
     digest = hashlib.sha256(
@@ -985,7 +1027,7 @@ def operator_operacie_fragment(request, pk):
     if not _user_has_operator_access(request.user, zakazka):
         return HttpResponse('Prístup zamietnutý', status=403)
 
-    context = _build_operator_order_detail_context(zakazka)
+    context = _build_operator_order_detail_context(zakazka, request.user)
     etag = _build_operacie_fragment_etag(context['operacie'])
 
     if_none_match = request.headers.get('If-None-Match', '')
@@ -1031,17 +1073,8 @@ def start_operation(request, objednavka_pk, operacia_pk):
         typ_udalosti='START'
     )
 
-    otvoreny = OperatorNaOperacii.objects.filter(
-        operacia=operacia_vyroby,
-        operator=request.user,
-        cas_konca__isnull=True
-    ).first()
-    if not otvoreny:
-        OperatorNaOperacii.objects.create(
-            operacia=operacia_vyroby,
-            operator=request.user,
-            cas_zaciatku=timezone.now()
-        )
+    _close_other_open_operator_sessions(operacia_vyroby, request.user)
+    _get_or_create_open_operator_session(operacia_vyroby, request.user)
     
     # Priradenie operátora k operácii
     operacia_vyroby.operator = request.user
@@ -1049,7 +1082,7 @@ def start_operation(request, objednavka_pk, operacia_pk):
     operacia_vyroby.datum_zaciatku = timezone.now()
     operacia_vyroby.save()
     
-    if objednavka.stav == 'nova':
+    if objednavka.stav in ['nova', 'pozastavene']:
         objednavka.stav = 'vyroba'
         objednavka.save()
     
@@ -1072,6 +1105,13 @@ def pause_operation(request, objednavka_pk, operacia_pk):
     if operacia_vyroby.objednavka != objednavka:
         return _api_error('Operácia nepatrí k tejto objednávke')
 
+    aktivny = _get_active_operator_session(operacia_vyroby)
+    if aktivny and aktivny.operator_id != request.user.id:
+        return _api_error(
+            f'Operáciu aktuálne vykonáva operátor {aktivny.operator.username}. '
+            f'Najprv ju prevezmite.'
+        )
+
     data = _get_json_body(request)
     if data is None:
         return _api_error('Neplatný JSON formát požiadavky.')
@@ -1088,13 +1128,7 @@ def pause_operation(request, objednavka_pk, operacia_pk):
     operacia_vyroby.stav = 'pozastavena'
     operacia_vyroby.save()
 
-    operator_zaznam = operacia_vyroby.operatori.filter(
-        operator=request.user,
-        cas_konca__isnull=True
-    ).first()
-    if operator_zaznam:
-        operator_zaznam.cas_konca = timezone.now()
-        operator_zaznam.save()
+    _close_other_open_operator_sessions(operacia_vyroby)
     
     objednavka.stav = 'pozastavene'
     objednavka.save()
@@ -1114,6 +1148,13 @@ def end_operation(request, objednavka_pk, operacia_pk):
     # Kontrola, či operácia patrí k objednávke
     if operacia_vyroby.objednavka != objednavka:
         return _api_error('Operácia nepatrí k tejto objednávke')
+
+    aktivny = _get_active_operator_session(operacia_vyroby)
+    if aktivny and aktivny.operator_id != request.user.id:
+        return _api_error(
+            f'Operáciu aktuálne vykonáva operátor {aktivny.operator.username}. '
+            f'Najprv ju prevezmite.'
+        )
     
     VyrobnyZaznam.objects.create(
         objednavka=objednavka,
@@ -1126,13 +1167,7 @@ def end_operation(request, objednavka_pk, operacia_pk):
     operacia_vyroby.datum_ukoncenia = timezone.now()
     operacia_vyroby.save()
 
-    operator_zaznam = operacia_vyroby.operatori.filter(
-        operator=request.user,
-        cas_konca__isnull=True
-    ).first()
-    if operator_zaznam:
-        operator_zaznam.cas_konca = timezone.now()
-        operator_zaznam.save()
+    _close_other_open_operator_sessions(operacia_vyroby)
     
     return _api_ok(
         f'Operácia {operacia_vyroby.nazov_operacie} ukončená',
@@ -1151,6 +1186,13 @@ def end_batch(request, objednavka_pk, operacia_pk):
 
     if operacia_vyroby.objednavka != objednavka:
         return _api_error('Operácia nepatrí k tejto objednávke')
+
+    aktivny = _get_active_operator_session(operacia_vyroby)
+    if aktivny and aktivny.operator_id != request.user.id:
+        return _api_error(
+            f'Operáciu aktuálne vykonáva operátor {aktivny.operator.username}. '
+            f'Najprv ju prevezmite, až potom ukončite dávku.'
+        )
 
     if request.POST:
         vyrobene_raw = request.POST.get('vyrobene_kusy', 0)
@@ -1174,6 +1216,50 @@ def end_batch(request, objednavka_pk, operacia_pk):
         return _api_error(str(e))
 
     return _api_ok(message, stav_operacie=operacia_vyroby.stav)
+
+
+@login_required
+@require_POST
+def take_over_operation(request, objednavka_pk, operacia_pk):
+    objednavka = get_object_or_404(Objednavka, pk=objednavka_pk)
+    operacia_vyroby = get_object_or_404(OperaciaVyroby, pk=operacia_pk)
+
+    if not _user_has_operator_access(request.user, objednavka):
+        return _api_error('Nie ste priradený k tejto objednávke!')
+
+    if operacia_vyroby.objednavka != objednavka:
+        return _api_error('Operácia nepatrí k tejto objednávke')
+
+    if operacia_vyroby.stav != 'vyroba':
+        return _api_error('Operáciu je možné prevziať iba keď je v stave "V práci".')
+
+    aktivny = _get_active_operator_session(operacia_vyroby)
+    if aktivny and aktivny.operator_id == request.user.id:
+        return _api_ok('Operáciu už máte prevzatú.', stav_operacie=operacia_vyroby.stav)
+
+    _close_other_open_operator_sessions(operacia_vyroby, request.user)
+    _get_or_create_open_operator_session(operacia_vyroby, request.user)
+
+    operacia_vyroby.operator = request.user
+    if not operacia_vyroby.datum_zaciatku:
+        operacia_vyroby.datum_zaciatku = timezone.now()
+    operacia_vyroby.save(update_fields=['operator', 'datum_zaciatku'])
+
+    VyrobnyZaznam.objects.create(
+        objednavka=objednavka,
+        operacia=operacia_vyroby.operacia_sablona,
+        operator=request.user,
+        typ_udalosti='START',
+    )
+
+    if objednavka.stav in ['nova', 'pozastavene']:
+        objednavka.stav = 'vyroba'
+        objednavka.save(update_fields=['stav'])
+
+    return _api_ok(
+        f'Operácia {operacia_vyroby.nazov_operacie} bola prevzatá operátorom {request.user.username}.',
+        stav_operacie=operacia_vyroby.stav,
+    )
 
 @login_required
 @require_POST
@@ -1388,27 +1474,37 @@ def report_problem(request, pk):
 def operator_prevziat_zakazku(request, pk):
     """Operátor prevzme novú objednávku priamo bez sub-batch"""
     objednavka = get_object_or_404(Objednavka, pk=pk)
-    
-    # Kontrola, či je objednávka v stave 'nova' a nie je už priradená
-    if objednavka.stav != 'nova':
-        return JsonResponse({'status': 'error', 'message': 'Objednávka nie je dostupná na prevzatie!'})
-    
-    if objednavka.priradeni_operatori.exists():
-        return JsonResponse({'status': 'error', 'message': 'Objednávka už má priradených operátorov!'})
-    
-    # Priradiť operátora k objednávke
-    objednavka.priradeni_operatori.add(request.user)
-    objednavka.stav = 'vyroba'
-    objednavka.save()
-    
-    # Vytvoriť záznam o začatí práce
-    VyrobnyZaznam.objects.create(
-        objednavka=objednavka,
-        operator=request.user,
-        typ_udalosti='START'
-    )
-    
-    return JsonResponse({'status': 'ok', 'message': f'Zakázka #{objednavka.cislo_objednavky} bola prevzatá!'})
+
+    if objednavka.stav == 'hotovo':
+        return JsonResponse({'status': 'error', 'message': 'Hotovú zákazku nie je možné prevziať.'})
+
+    if request.user in objednavka.priradeni_operatori.all():
+        return JsonResponse({'status': 'ok', 'message': f'Zakázka #{objednavka.cislo_objednavky} je už priradená.'})
+
+    if objednavka.stav == 'nova':
+        if objednavka.priradeni_operatori.exists():
+            return JsonResponse({'status': 'error', 'message': 'Objednávka už má priradených operátorov!'})
+
+        objednavka.priradeni_operatori.add(request.user)
+        objednavka.stav = 'vyroba'
+        objednavka.save()
+
+        VyrobnyZaznam.objects.create(
+            objednavka=objednavka,
+            operator=request.user,
+            typ_udalosti='START'
+        )
+
+        return JsonResponse({'status': 'ok', 'message': f'Zakázka #{objednavka.cislo_objednavky} bola prevzatá!'})
+
+    if objednavka.stav in ['vyroba', 'pozastavene']:
+        objednavka.priradeni_operatori.add(request.user)
+        return JsonResponse({
+            'status': 'ok',
+            'message': f'Zakázka #{objednavka.cislo_objednavky} bola priradená. Otvorte detail a prevezmite konkrétnu operáciu.',
+        })
+
+    return JsonResponse({'status': 'error', 'message': 'Objednávka nie je dostupná na prevzatie!'})
 
 @login_required
 def download_sprievodka(request, pk):
@@ -1893,8 +1989,8 @@ def upravit_produkt(request, pk):
         'submit_text': 'Uložiť zmeny',
         'produkt': produkt,
     }
-    
-    return render(request, 'core/novy_produkt.html', context)
+
+    return render(request, 'core/form_universal.html', context)
 
 
 @login_required

@@ -26,6 +26,28 @@
         font-weight: 700;
         line-height: 1.1;
     }
+    .live-kpi-value {
+        transition: color 0.25s ease, transform 0.25s ease;
+    }
+    .live-kpi-value.kpi-flash {
+        color: #20c997 !important;
+        transform: scale(1.04);
+    }
+    @keyframes kpiPulse {
+        0% { box-shadow: 0 0 0 0 rgba(32, 201, 151, 0.35); }
+        100% { box-shadow: 0 0 0 8px rgba(32, 201, 151, 0); }
+    }
+    .live-kpi-value.kpi-flash {
+        animation: kpiPulse 0.7s ease-out;
+    }
+    @media (prefers-reduced-motion: reduce) {
+        .live-kpi-value,
+        .live-kpi-value.kpi-flash {
+            transition: none !important;
+            animation: none !important;
+            transform: none !important;
+        }
+    }
     @media (max-width: 576px) {
         .operator-avatar {
             width: 72px;
@@ -58,7 +80,7 @@
 {% endblock %}
 
 {% block content %}
-<div class="container-fluid px-0 px-md-2">
+<div id="operatorDashboardLiveRoot" class="container-fluid px-0 px-md-2">
     <div class="card shadow-sm operator-profile-card mb-3">
         <div class="card-body p-3 p-md-4">
             <div class="d-flex flex-column flex-md-row align-items-center align-items-md-start gap-3">
@@ -67,9 +89,9 @@
                     <h4 class="mb-1">{{ operator_name }}</h4>
                     <div class="small opacity-75 mb-2">👷 Operátor výroby · {{ user.username }}</div>
                     <div class="d-flex flex-wrap gap-2 justify-content-center justify-content-md-start">
-                        <span class="badge bg-light text-dark">📦 Aktívne zakázky: {{ aktivne_zakazky }}</span>
-                        <span class="badge bg-light text-dark">✅ Dokončené: {{ dokoncene_zakazky }}</span>
-                        <span class="badge bg-light text-dark">🧾 Priradené: {{ priradene_cakajuce }}</span>
+                        <span class="badge bg-light text-dark">📦 Aktívne zakázky: <span class="live-kpi-value" data-live-key="aktivne_zakazky">{{ aktivne_zakazky }}</span></span>
+                        <span class="badge bg-light text-dark">✅ Dokončené: <span class="live-kpi-value" data-live-key="dokoncene_zakazky">{{ dokoncene_zakazky }}</span></span>
+                        <span class="badge bg-light text-dark">🧾 Priradené: <span class="live-kpi-value" data-live-key="priradene_cakajuce">{{ priradene_cakajuce }}</span></span>
                     </div>
                 </div>
             </div>
@@ -81,7 +103,7 @@
             <div class="card kpi-card shadow-sm h-100">
                 <div class="card-body">
                     <div class="text-muted small">⚡ Výkonnosť (30 dní)</div>
-                    <div class="kpi-value text-primary">{{ vykonnost_ks_den }} ks/deň</div>
+                    <div class="kpi-value text-primary live-kpi-value" data-live-key="vykonnost_ks_den">{{ vykonnost_ks_den }} ks/deň</div>
                 </div>
             </div>
         </div>
@@ -89,7 +111,7 @@
             <div class="card kpi-card shadow-sm h-100">
                 <div class="card-body">
                     <div class="text-muted small">🧩 Vyrobené kusy</div>
-                    <div class="kpi-value">{{ vyrobene_spolu }}</div>
+                    <div class="kpi-value live-kpi-value" data-live-key="vyrobene_spolu">{{ vyrobene_spolu }}</div>
                 </div>
             </div>
         </div>
@@ -97,7 +119,7 @@
             <div class="card kpi-card shadow-sm h-100">
                 <div class="card-body">
                     <div class="text-muted small">🗑️ Zmetky</div>
-                    <div class="kpi-value text-danger">{{ nepodarky_spolu }}</div>
+                    <div class="kpi-value text-danger live-kpi-value" data-live-key="nepodarky_spolu">{{ nepodarky_spolu }}</div>
                 </div>
             </div>
         </div>
@@ -105,7 +127,7 @@
             <div class="card kpi-card shadow-sm h-100">
                 <div class="card-body">
                     <div class="text-muted small">📉 Zmetkovitosť</div>
-                    <div class="kpi-value {% if zmetkovitost_pct > 5 %}text-danger{% elif zmetkovitost_pct > 2 %}text-warning{% else %}text-success{% endif %}">
+                    <div class="kpi-value live-kpi-value {% if zmetkovitost_pct > 5 %}text-danger{% elif zmetkovitost_pct > 2 %}text-warning{% else %}text-success{% endif %}" data-live-key="zmetkovitost_pct">
                         {{ zmetkovitost_pct }} %
                     </div>
                 </div>
@@ -223,6 +245,38 @@
                 </div>
             </div>
         </div>
+
+        <div class="col-12">
+            <div class="card shadow-sm h-100">
+                <div class="card-header bg-light d-flex justify-content-between align-items-center">
+                    <h5 class="mb-0">🔁 Rozpracované na prevzatie</h5>
+                    <span class="badge bg-secondary">{{ dostupne_rozpracovane }}</span>
+                </div>
+                <div class="card-body p-0">
+                    {% if rozpracovane_dostupne %}
+                        <div class="list-group list-group-flush">
+                            {% for obj in rozpracovane_dostupne %}
+                            <div class="list-group-item py-3">
+                                <div class="d-flex flex-column flex-md-row justify-content-between align-items-start align-items-md-center gap-2">
+                                    <div>
+                                        <div class="fw-semibold">#{{ obj.cislo_objednavky }} · {{ obj.produkt.nazov }}</div>
+                                        <small class="text-muted">{{ obj.mnozstvo }} ks · Termín: {{ obj.datum_pozadovane|date:"d.m.Y" }} · Stav: {{ obj.get_stav_display }}</small>
+                                    </div>
+                                    <div class="d-grid d-md-block w-100 w-md-auto">
+                                        <button class="btn btn-outline-warning btn-sm" onclick="prevziatZakazku({{ obj.pk }})">
+                                            🔁 Priradiť a otvoriť detail
+                                        </button>
+                                    </div>
+                                </div>
+                            </div>
+                            {% endfor %}
+                        </div>
+                    {% else %}
+                        <div class="p-3 text-muted">Žiadne rozpracované zakázky na prevzatie.</div>
+                    {% endif %}
+                </div>
+            </div>
+        </div>
     </div>
 </div>
 
@@ -255,7 +309,7 @@ function prevziatZakazku(objednavkaId) {
         .then(data => {
             if (data.status === 'ok') {
                 alert(data.message);
-                location.reload();
+                window.location.href = `/operator/zakazka/${objednavkaId}/`;
             } else {
                 alert('Chyba: ' + data.message);
             }
@@ -266,5 +320,82 @@ function prevziatZakazku(objednavkaId) {
         });
     }
 }
+
+(function () {
+    const DASHBOARD_AUTO_REFRESH_MS = 10000;
+    let syncInFlight = false;
+
+    const isUserEditing = () => {
+        const active = document.activeElement;
+        if (!active) return false;
+        const tag = active.tagName;
+        return tag === 'INPUT' || tag === 'TEXTAREA' || tag === 'SELECT';
+    };
+
+    const refreshDashboardContent = async () => {
+        if (syncInFlight) {
+            return;
+        }
+
+        const root = document.getElementById('operatorDashboardLiveRoot');
+        if (!root) {
+            return;
+        }
+
+        syncInFlight = true;
+        try {
+            const response = await fetch(window.location.pathname, {
+                headers: { 'X-Requested-With': 'XMLHttpRequest' },
+                cache: 'no-cache',
+            });
+
+            if (!response.ok) {
+                return;
+            }
+
+            const html = await response.text();
+            const parser = new DOMParser();
+            const doc = parser.parseFromString(html, 'text/html');
+            const nextRoot = doc.getElementById('operatorDashboardLiveRoot');
+            if (!nextRoot) {
+                return;
+            }
+
+            const oldValues = {};
+            root.querySelectorAll('[data-live-key]').forEach((el) => {
+                oldValues[el.dataset.liveKey] = (el.textContent || '').trim();
+            });
+
+            const nextValues = {};
+            nextRoot.querySelectorAll('[data-live-key]').forEach((el) => {
+                nextValues[el.dataset.liveKey] = (el.textContent || '').trim();
+            });
+
+            root.innerHTML = nextRoot.innerHTML;
+
+            root.querySelectorAll('[data-live-key]').forEach((el) => {
+                const key = el.dataset.liveKey;
+                if (!key) {
+                    return;
+                }
+                if (oldValues[key] !== undefined && oldValues[key] !== nextValues[key]) {
+                    el.classList.add('kpi-flash');
+                    setTimeout(() => el.classList.remove('kpi-flash'), 900);
+                }
+            });
+        } catch (error) {
+            console.warn('Auto refresh dashboard zlyhal:', error);
+        } finally {
+            syncInFlight = false;
+        }
+    };
+
+    setInterval(() => {
+        if (document.hidden || isUserEditing()) {
+            return;
+        }
+        refreshDashboardContent();
+    }, DASHBOARD_AUTO_REFRESH_MS);
+})();
 </script>
 {% endblock %}

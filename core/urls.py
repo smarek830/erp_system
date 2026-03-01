@@ -34,6 +34,7 @@ urlpatterns = [
 
     # AJAX API
     path('api/operator/start/<int:objednavka_pk>/<int:operacia_pk>/', views.start_operation, name='start_operation'),
+    path('api/operator/takeover/<int:objednavka_pk>/<int:operacia_pk>/', views.take_over_operation, name='take_over_operation'),
     path('api/operator/pause/<int:objednavka_pk>/<int:operacia_pk>/', views.pause_operation, name='pause_operation'),
     path('api/operator/end-batch/<int:objednavka_pk>/<int:operacia_pk>/', views.end_batch, name='end_batch'),
     path('api/operator/end/<int:objednavka_pk>/<int:operacia_pk>/', views.end_operation, name='end_operation'),
