@@ -107,7 +107,15 @@
                                 <div id="material-info" class="border border-warning bg-warning-subtle text-dark rounded px-3 py-2 small" style="display: none;">
                                     <div><strong>Materiál:</strong> <span id="material-text">-</span></div>
                                     <div class="mt-2"><strong>Vlastnosti tyče:</strong> <span id="material-props">-</span></div>
-                                    <table class="table table-sm mb-0 mt-3">
+                                    <div id="material-warning-banner" class="alert alert-warning border border-danger border-2 py-2 px-3 mt-3 mb-2" style="display:none;">
+                                        <strong>⚠️ Upozornenie:</strong>
+                                        <span id="material-warning-text">Nedostatok materiálu.</span>
+                                    </div>
+                                    <div id="material-low-stock-banner" class="alert alert-warning border border-warning py-2 px-3 mt-2 mb-2" style="display:none;">
+                                        <strong>⚠️ Nízka zásoba:</strong>
+                                        <span id="material-low-stock-text">Po výdaji budete pod minimom.</span>
+                                    </div>
+                                    <table class="table table-sm table-warning mb-0 mt-3">
                                         <thead class="table-light">
                                             <tr>
                                                 <th colspan="2" class="border-bottom-2">Potreba materiálu</th>
@@ -140,7 +148,7 @@
                                             </tr>
                                             <tr id="nedostatokRow" style="display: none;" class="table-danger">
                                                 <td><strong>⚠️ NEDOSTATOK:</strong></td>
-                                                <td class="text-end"><strong id="nedostatok">-</strong> kg</td>
+                                                <td class="text-end"><strong id="nedostatok">-</strong> <span id="nedostatokJednotka">kg</span></td>
                                             </tr>
                                             <tr id="podMinimomRow" style="display: none;" class="table-warning">
                                                 <td><strong>⚠️ Pod minimom po výdaji:</strong></td>
@@ -184,7 +192,7 @@
                                     <a href="{% url 'plan_vyroby' %}" class="btn btn-outline-secondary">
                                         Zrušiť
                                     </a>
-                                    <button type="submit" class="btn btn-primary">
+                                    <button type="submit" id="btnSaveOrder" class="btn btn-primary">
                                         {% if objednavka %}
                                             💾 Uložiť zmeny
                                         {% else %}
@@ -201,6 +209,25 @@
     </div>
 </div>
 
+<div class="modal fade" id="materialShortageModal" tabindex="-1" aria-hidden="true">
+    <div class="modal-dialog modal-dialog-centered">
+        <div class="modal-content">
+            <div class="modal-header bg-warning-subtle">
+                <h5 class="modal-title">⚠️ Nedostatok materiálu</h5>
+                <button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="Zavrieť"></button>
+            </div>
+            <div class="modal-body">
+                <p class="mb-0" id="materialShortageMessage">
+                    Pre túto zákazku aktuálne nie je dostatok materiálu na sklade.
+                </p>
+            </div>
+            <div class="modal-footer">
+                <button type="button" class="btn btn-warning" data-bs-dismiss="modal">Rozumiem</button>
+            </div>
+        </div>
+    </div>
+</div>
+
 {{ sklad_map|json_script:"sklad-data" }}
 {{ produkt_material_map|json_script:"material-data" }}
 
@@ -209,11 +236,64 @@
         const selectEl = document.getElementById("id_produkt");
         const infoEl = document.getElementById("sklad-info");
         const materialEl = document.getElementById("material-info");
+        const warningBannerEl = document.getElementById("material-warning-banner");
+        const warningTextEl = document.getElementById("material-warning-text");
+        const lowStockBannerEl = document.getElementById("material-low-stock-banner");
+        const lowStockTextEl = document.getElementById("material-low-stock-text");
+        const shortageModalEl = document.getElementById("materialShortageModal");
+        const shortageMessageEl = document.getElementById("materialShortageMessage");
         const qtyEl = document.getElementById("id_mnozstvo");
+        const submitBtn = document.getElementById("btnSaveOrder");
+        const formEl = submitBtn ? submitBtn.closest('form') : null;
         if (!selectEl || !infoEl) return;
 
         const skladData = JSON.parse(document.getElementById("sklad-data").textContent || "{}");
         const materialData = JSON.parse(document.getElementById("material-data").textContent || "{}");
+        let wasShortageActive = false;
+        let currentHasShortage = false;
+        let currentShortageMessage = '';
+        const submitDefaultLabel = submitBtn ? submitBtn.textContent : '';
+
+        const showShortageModal = (message) => {
+            if (!shortageModalEl || !window.bootstrap || !window.bootstrap.Modal) {
+                return;
+            }
+            if (wasShortageActive) {
+                return;
+            }
+            if (shortageMessageEl) {
+                shortageMessageEl.textContent = message;
+            }
+            const modal = window.bootstrap.Modal.getOrCreateInstance(shortageModalEl);
+            modal.show();
+            wasShortageActive = true;
+        };
+
+        const hideShortageBanner = () => {
+            if (warningBannerEl) {
+                warningBannerEl.style.display = "none";
+            }
+        };
+
+        const hideLowStockBanner = () => {
+            if (lowStockBannerEl) {
+                lowStockBannerEl.style.display = "none";
+            }
+        };
+
+        const updateSubmitState = (hasShortage) => {
+            if (!submitBtn) return;
+            submitBtn.disabled = Boolean(hasShortage);
+            submitBtn.classList.toggle('btn-danger', Boolean(hasShortage));
+            submitBtn.classList.toggle('btn-primary', !hasShortage);
+            submitBtn.textContent = hasShortage ? '⛔ Nedostatok materiálu' : submitDefaultLabel;
+        };
+
+        const setShortageState = (hasShortage, message = '') => {
+            currentHasShortage = Boolean(hasShortage);
+            currentShortageMessage = message || '';
+            updateSubmitState(currentHasShortage);
+        };
 
         const updateInfo = () => {
             const produktId = selectEl.value;
@@ -222,6 +302,10 @@
                 if (materialEl) {
                     materialEl.style.display = "none";
                 }
+                hideShortageBanner();
+                hideLowStockBanner();
+                setShortageState(false);
+                wasShortageActive = false;
                 return;
             }
             const mnozstvo = skladData[produktId] !== undefined ? skladData[produktId] : 0;
@@ -230,6 +314,9 @@
 
             if (!materialEl || !materialData[produktId]) {
                 materialEl.style.display = "none";
+                hideShortageBanner();
+                hideLowStockBanner();
+                setShortageState(false);
                 return;
             }
 
@@ -240,6 +327,7 @@
             const kgNaMeter = parseFloat(data.kg_na_meter || 0);
             const zasoba = parseFloat(data.zasoba || 0);
             const minZasoba = parseFloat(data.minimalna_zasoba || 0);
+            const jednotkaNorm = String(data.jednotka || '').trim().toLowerCase();
 
             // Update material name and properties
             document.getElementById("material-text").textContent = 
@@ -267,22 +355,57 @@
             const nedostatokRow = document.getElementById("nedostatokRow");
             const podMinimomRow = document.getElementById("podMinimomRow");
             let hasWarning = false;
+            let hasShortage = false;
+            let hasLowStock = false;
+            let shortageValue = 0;
+            let shortageUnit = 'kg';
+            let afterIssueStock = 0;
 
-            if ((data.jednotka || "").toLowerCase() === "kg" && kg > 0) {
+            if (jednotkaNorm === "kg" && kg > 0) {
                 const nedostatok = Math.max(0, kg - zasoba);
                 if (nedostatok > 0) {
                     document.getElementById("nedostatok").textContent = nedostatok.toFixed(2);
+                    document.getElementById("nedostatokJednotka").textContent = 'kg';
                     nedostatokRow.style.display = "table-row";
                     hasWarning = true;
+                    hasShortage = true;
+                    shortageValue = nedostatok;
+                    shortageUnit = 'kg';
                 } else {
                     nedostatokRow.style.display = "none";
                 }
 
                 const zostatok = zasoba - kg;
+                afterIssueStock = zostatok;
                 if (zostatok < minZasoba && zostatok >= 0) {
                     document.getElementById("podMinimom").textContent = zostatok.toFixed(2);
                     podMinimomRow.style.display = "table-row";
                     hasWarning = true;
+                    hasLowStock = true;
+                } else {
+                    podMinimomRow.style.display = "none";
+                }
+            } else if ((jednotkaNorm === 'tyc' || jednotkaNorm === 'tyče' || jednotkaNorm === 'ks') && tyce > 0) {
+                const nedostatokTyce = Math.max(0, tyce - zasoba);
+                if (nedostatokTyce > 0) {
+                    document.getElementById("nedostatok").textContent = nedostatokTyce.toFixed(0);
+                    document.getElementById("nedostatokJednotka").textContent = data.jednotka || 'ks';
+                    nedostatokRow.style.display = "table-row";
+                    hasWarning = true;
+                    hasShortage = true;
+                    shortageValue = nedostatokTyce;
+                    shortageUnit = data.jednotka || 'ks';
+                } else {
+                    nedostatokRow.style.display = "none";
+                }
+
+                const zostatok = zasoba - tyce;
+                afterIssueStock = zostatok;
+                if (zostatok < minZasoba && zostatok >= 0) {
+                    document.getElementById("podMinimom").textContent = zostatok.toFixed(2);
+                    podMinimomRow.style.display = "table-row";
+                    hasWarning = true;
+                    hasLowStock = true;
                 } else {
                     podMinimomRow.style.display = "none";
                 }
@@ -292,11 +415,36 @@
             }
 
             if (hasWarning) {
-                materialEl.classList.remove("border-warning", "bg-warning-subtle", "text-dark");
-                materialEl.classList.add("border-danger", "bg-danger-subtle");
+                materialEl.classList.remove("border-warning", "bg-danger-subtle");
+                materialEl.classList.add("border-danger", "border-2", "bg-warning-subtle", "text-dark");
             } else {
-                materialEl.classList.remove("border-danger", "bg-danger-subtle");
+                materialEl.classList.remove("border-danger", "border-2");
                 materialEl.classList.add("border-warning", "bg-warning-subtle", "text-dark");
+            }
+
+            if (hasShortage) {
+                const shortageDisplay = shortageUnit === 'kg' ? shortageValue.toFixed(2) : shortageValue.toFixed(0);
+                const warningMessage = `Nebude možné vyrobiť zákazku pre nedostatok materiálu: chýba ${shortageDisplay} ${shortageUnit} (${data.material_nazov}).`;
+                if (warningBannerEl && warningTextEl) {
+                    warningTextEl.textContent = warningMessage;
+                    warningBannerEl.style.display = "block";
+                }
+                hideLowStockBanner();
+                showShortageModal(warningMessage);
+                setShortageState(true, warningMessage);
+            } else {
+                hideShortageBanner();
+                wasShortageActive = false;
+                setShortageState(false);
+                if (hasLowStock) {
+                    if (lowStockBannerEl && lowStockTextEl) {
+                        const jednotkaInfo = data.jednotka || 'kg';
+                        lowStockTextEl.textContent = `Po výdaji zostane ${afterIssueStock.toFixed(2)} ${jednotkaInfo}, minimum je ${minZasoba.toFixed(2)} ${jednotkaInfo}. Zákazku je možné založiť, ale treba doplniť materiál.`;
+                        lowStockBannerEl.style.display = "block";
+                    }
+                } else {
+                    hideLowStockBanner();
+                }
             }
 
             materialEl.style.display = "block";
@@ -306,6 +454,22 @@
         if (qtyEl) {
             qtyEl.addEventListener("input", updateInfo);
         }
+
+        if (formEl) {
+            formEl.addEventListener('submit', function (event) {
+                if (!currentHasShortage) {
+                    return;
+                }
+                event.preventDefault();
+                const message = currentShortageMessage || 'Nebude možné vyrobiť zákazku pre nedostatok materiálu.';
+                if (warningBannerEl && warningTextEl) {
+                    warningTextEl.textContent = message;
+                    warningBannerEl.style.display = 'block';
+                }
+                showShortageModal(message);
+            });
+        }
+
         updateInfo();
     })();
 </script>
