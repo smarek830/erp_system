@@ -63,6 +63,7 @@
 
             const icon = themeToggle.querySelector('[data-theme-icon]');
             const label = themeToggle.querySelector('[data-theme-label]');
+            const themeMeta = document.querySelector('meta[name="theme-color"]');
 
             function currentTheme() {
                 return document.documentElement.getAttribute('data-bs-theme') || 'light';
@@ -74,10 +75,13 @@
                     icon.className = isDark ? 'bi bi-moon-stars me-1' : 'bi bi-sun me-1';
                 }
                 if (label) {
-                    label.textContent = isDark ? 'Tmavý' : 'Svetlý';
+                    label.textContent = isDark ? 'Tmavý režim' : 'Svetlý režim';
                 }
                 themeToggle.setAttribute('aria-pressed', String(isDark));
                 themeToggle.setAttribute('title', isDark ? 'Prepnúť na svetlý režim' : 'Prepnúť na tmavý režim');
+                if (themeMeta) {
+                    themeMeta.setAttribute('content', isDark ? '#1f2430' : '#0d6efd');
+                }
             }
 
             updateThemeUi(currentTheme());

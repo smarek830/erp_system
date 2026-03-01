@@ -4,16 +4,28 @@
     --container-max-width: 1200px;
     --container-side-padding: 16px;
     --container-side-padding-mobile: 10px;
+    --ui-radius: 0.75rem;
 }
 
 body {
     font-family: var(--app-font);
     background-color: var(--app-bg);
     color: var(--bs-body-color);
+    transition: background-color 0.2s ease, color 0.2s ease;
 }
 
 .navbar {
     box-shadow: 0 2px 4px rgba(0,0,0,.1);
+    backdrop-filter: saturate(1.1) blur(2px);
+}
+
+.navbar .nav-link {
+    border-radius: 0.5rem;
+}
+
+.navbar .nav-link:hover,
+.navbar .nav-link:focus {
+    background-color: rgba(255, 255, 255, 0.12);
 }
 
 .app-container {
@@ -30,6 +42,8 @@ body {
 
 .page-header {
     gap: 0.5rem;
+    border-bottom: 1px solid var(--bs-border-color-translucent);
+    padding-bottom: 0.5rem;
 }
 
 .page-actions {
@@ -51,6 +65,10 @@ body {
     vertical-align: middle;
 }
 
+.table-clean tbody tr {
+    transition: background-color 0.15s ease;
+}
+
 .table-sticky thead th {
     position: sticky;
     top: 0;
@@ -59,10 +77,30 @@ body {
 
 .card-soft {
     border: 1px solid var(--bs-border-color-translucent);
+    border-radius: var(--ui-radius);
+}
+
+.card-soft .card-header {
+    border-top-left-radius: var(--ui-radius);
+    border-top-right-radius: var(--ui-radius);
+}
+
+.card-soft .card-footer {
+    border-bottom-left-radius: var(--ui-radius);
+    border-bottom-right-radius: var(--ui-radius);
 }
 
 [data-bs-theme="dark"] .version-badge {
     color: var(--bs-secondary-color);
+}
+
+[data-bs-theme="dark"] .navbar {
+    box-shadow: 0 4px 14px rgba(0, 0, 0, 0.35);
+}
+
+[data-bs-theme="dark"] .navbar .nav-link:hover,
+[data-bs-theme="dark"] .navbar .nav-link:focus {
+    background-color: rgba(255, 255, 255, 0.16);
 }
 
 [data-bs-theme="dark"] footer.bg-light {
@@ -74,8 +112,17 @@ body {
     color: var(--bs-secondary-color);
 }
 
+[data-bs-theme="dark"] .table-clean tbody tr:hover {
+    background-color: rgba(255, 255, 255, 0.03);
+}
+
+[data-bs-theme="dark"] .card-soft {
+    background-color: var(--bs-tertiary-bg);
+}
+
 #themeToggleBtn {
     min-width: 96px;
+    border-radius: 0.6rem;
 }
 
 [data-bs-theme="dark"] #themeToggleBtn {
@@ -103,6 +150,11 @@ body {
         word-break: break-word;
     }
 
+    .navbar .nav-link {
+        padding-left: 0.6rem !important;
+        padding-right: 0.6rem !important;
+    }
+
     .card-header h4,
     .card-header h5,
     .card-header h6 {
@@ -127,6 +179,7 @@ body {
 
     #themeToggleBtn {
         width: 100%;
-        margin-bottom: 0.35rem;
+        margin-bottom: 0.45rem;
+        min-height: 42px;
     }
 }
