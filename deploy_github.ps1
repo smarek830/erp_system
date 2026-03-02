@@ -29,27 +29,31 @@ function Invoke-NasCommand {
 
 try {
 
-Write-Host "[1/6] Update kódu bez mazania dát..." -ForegroundColor Yellow
+Write-Host "[1/7] Update kódu bez mazania dát..." -ForegroundColor Yellow
 Invoke-NasCommand "$NAS_ENV; if [ -d ${NAS_PATH}/.git ]; then cd ${NAS_PATH}; git fetch origin main; git reset --hard origin/main; echo 'Kód aktualizovaný cez git'; else mkdir -p /volume1/docker; git clone ${GITHUB_REPO} ${NAS_PATH}; echo 'Kód naklonovaný z GitHubu'; fi" "Update kódu"
 
 Write-Host ""
-Write-Host "[2/6] Kontrola Docker prostredia..." -ForegroundColor Yellow
+Write-Host "[2/7] Inicializácia .env (ak chýba)..." -ForegroundColor Yellow
+Invoke-NasCommand "$NAS_ENV; cd ${NAS_PATH}; if [ ! -f .env ]; then if [ -f .env.example ]; then cp .env.example .env; echo '.env vytvorený z .env.example'; else printf 'OPENAI_API_KEY=\nOPENAI_MATERIAL_MODEL=gpt-4.1-mini\nAI_MATERIAL_ALLOWED_DOMAINS=ferona.sk,profimetal.sk,mersteel.eu\n' > .env; echo '.env vytvorený s default hodnotami'; fi; else echo '.env už existuje'; fi" "Inicializácia .env"
+
+Write-Host ""
+Write-Host "[3/7] Kontrola Docker prostredia..." -ForegroundColor Yellow
 Invoke-NasCommand "$NAS_ENV; docker --version; docker compose version" "Kontrola Docker prostredia"
 
 Write-Host ""
-Write-Host "[3/6] Backup databázy pred aktualizáciou..." -ForegroundColor Yellow
+Write-Host "[4/7] Backup databázy pred aktualizáciou..." -ForegroundColor Yellow
 Invoke-NasCommand "$NAS_ENV; cd ${NAS_PATH}; docker compose exec -T web sh -c 'mkdir -p /data/backups && if [ -f /data/db.sqlite3 ]; then cp /data/db.sqlite3 /data/backups/db_`$(date +%Y%m%d_%H%M%S).sqlite3 && echo Backup hotovy; else echo Databaza este neexistuje; fi' || echo 'Backup preskočený (prvé nasadenie alebo kontajner nebeží)'" "Backup databázy"
 
 Write-Host ""
-Write-Host "[4/6] Zastavenie starých kontajnerov..." -ForegroundColor Yellow
+Write-Host "[5/7] Zastavenie starých kontajnerov..." -ForegroundColor Yellow
 Invoke-NasCommand "$NAS_ENV; cd ${NAS_PATH}; docker compose down 2>/dev/null || true" "Zastavenie kontajnerov"
 
 Write-Host ""
-Write-Host "[5/6] Docker build a štart..." -ForegroundColor Yellow
+Write-Host "[6/7] Docker build a štart..." -ForegroundColor Yellow
 Invoke-NasCommand "$NAS_ENV; cd ${NAS_PATH}; docker compose build && docker compose up -d" "Docker build a štart"
 
 Write-Host ""
-Write-Host "[6/6] Kontrola stavu kontajnera..." -ForegroundColor Yellow
+Write-Host "[7/7] Kontrola stavu kontajnera..." -ForegroundColor Yellow
 Invoke-NasCommand "$NAS_ENV; cd ${NAS_PATH}; docker compose ps; echo ''; docker compose logs --tail=20 web" "Kontrola kontajnera"
 
 Write-Host ""
