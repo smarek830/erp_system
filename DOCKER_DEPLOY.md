@@ -158,6 +158,29 @@ docker-compose up -d
 docker-compose exec web python manage.py migrate
 ```
 
+## 🔑 OpenAI konfigurácia (AI návrh materiálu)
+
+Ak vidíš chybu `Chýba OPENAI_API_KEY v nastaveniach servera.`, doplň `.env` súbor v adresári projektu na NASe (rovnaký priečinok ako `docker-compose.yml`):
+
+```bash
+cd /volume1/docker/erp
+cat > .env << 'EOF'
+OPENAI_API_KEY=sk-SEM_VLOZ_TVOJ_REALNY_KLUC
+OPENAI_MATERIAL_MODEL=gpt-4.1-mini
+AI_MATERIAL_ALLOWED_DOMAINS=ferona.sk,profimetal.sk,mersteel.eu
+EOF
+```
+
+Potom reštartni kontajner:
+
+```bash
+cd /volume1/docker/erp
+docker compose up -d --build
+docker compose logs --tail=50 web
+```
+
+Poznámka: `.env` je v `.gitignore`, takže kľúč sa necommitne do repozitára.
+
 ---
 
 ## 📊 Monitorovanie

@@ -14,11 +14,16 @@ services:
     restart: unless-stopped
     stdin_open: true
     tty: true
+    env_file:
+      - .env
     environment:
       - PYTHONUNBUFFERED=1
       - DEBUG=True
       - DJANGO_SETTINGS_MODULE=config.settings
       - SQLITE_PATH=/data/db.sqlite3
+      - OPENAI_API_KEY=${OPENAI_API_KEY:-}
+      - OPENAI_MATERIAL_MODEL=${OPENAI_MATERIAL_MODEL:-gpt-4.1-mini}
+      - AI_MATERIAL_ALLOWED_DOMAINS=${AI_MATERIAL_ALLOWED_DOMAINS:-ferona.sk,profimetal.sk,mersteel.eu}
     healthcheck:
       test: ["CMD", "python", "-c", "import requests; requests.get('http://localhost:8000')"]
       interval: 30s
