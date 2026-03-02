@@ -797,11 +797,29 @@ document.addEventListener('submit', async function (event) {
   const AUTO_SYNC_MS = 8000;
   let autoSyncInFlight = false;
 
+  const isUserInteractingWithForm = () => {
+    if (document.querySelector('.modal.show')) {
+      return true;
+    }
+
+    const active = document.activeElement;
+    if (!active) {
+      return false;
+    }
+
+    const tag = (active.tagName || '').toUpperCase();
+    if (tag === 'INPUT' || tag === 'TEXTAREA' || tag === 'SELECT') {
+      return true;
+    }
+
+    return active.isContentEditable === true;
+  };
+
   setInterval(async () => {
     if (document.hidden) {
       return;
     }
-    if (lockedFormCount > 0 || autoSyncInFlight) {
+    if (lockedFormCount > 0 || autoSyncInFlight || isUserInteractingWithForm()) {
       return;
     }
     autoSyncInFlight = true;
