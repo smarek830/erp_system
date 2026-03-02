@@ -796,6 +796,7 @@ document.addEventListener('submit', async function (event) {
 (function () {
   const AUTO_SYNC_MS = 8000;
   let autoSyncInFlight = false;
+  let pausedHintVisible = false;
 
   const isUserInteractingWithForm = () => {
     if (document.querySelector('.modal.show')) {
@@ -816,17 +817,29 @@ document.addEventListener('submit', async function (event) {
   };
 
   setInterval(async () => {
+    const syncInfo = document.getElementById('operatorLiveSyncInfo');
+
     if (document.hidden) {
       return;
     }
-    if (lockedFormCount > 0 || autoSyncInFlight || isUserInteractingWithForm()) {
+
+    const isPausedByEditing = isUserInteractingWithForm();
+    if (lockedFormCount > 0 || autoSyncInFlight || isPausedByEditing) {
+      if (isPausedByEditing && syncInfo && !pausedHintVisible) {
+        syncInfo.textContent = '✍️ Editujem – live sync pozastavený';
+        pausedHintVisible = true;
+      }
       return;
     }
+
+    if (pausedHintVisible) {
+      pausedHintVisible = false;
+    }
+
     autoSyncInFlight = true;
     try {
       const refreshed = await refreshOperationsCard();
       if (!refreshed) {
-        const syncInfo = document.getElementById('operatorLiveSyncInfo');
         if (syncInfo) {
           syncInfo.textContent = '⚠️ Live sync sa nepodaril, skúsim znova…';
         }
