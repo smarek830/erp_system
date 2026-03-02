@@ -53,6 +53,102 @@
         </div>
     </div>
 
+    <div class="card shadow-sm mb-4 border-info">
+        <div class="card-header bg-info text-dark d-flex justify-content-between align-items-center">
+            <h5 class="mb-0">🤖 AI návrh materiálu (OpenAI)</h5>
+            <span class="badge bg-dark-subtle text-dark">Krok 1: návrh → Krok 2: potvrdiť</span>
+        </div>
+        <div class="card-body">
+            <div class="row g-3">
+                <div class="col-md-7">
+                    <label for="aiMaterialQuery" class="form-label">Čo chceš nájsť?</label>
+                    <input id="aiMaterialQuery" type="text" class="form-control" placeholder="napr. oceľová guľatina C45, Ø20 mm, 6m">
+                </div>
+                <div class="col-md-5">
+                    <label for="aiMaterialSourceUrl" class="form-label">URL zdroja (voliteľné)</label>
+                    <input id="aiMaterialSourceUrl" type="url" class="form-control" placeholder="https://...">
+                </div>
+            </div>
+
+            <div class="mt-2 small text-muted">
+                Povolené weby (MVP):
+                {% for domain in ai_material_allowed_domains %}
+                    <span class="badge rounded-pill bg-secondary me-1">{{ domain }}</span>
+                {% endfor %}
+            </div>
+
+            <div class="d-flex align-items-center gap-2 mt-3">
+                <button id="btnGenerateAiMaterial" class="btn btn-info">🔎 Vytvoriť AI návrh</button>
+                <span id="aiMaterialStatus" class="small text-muted">Pripravené</span>
+            </div>
+
+            <div id="aiMaterialDraftCard" class="card mt-3 d-none border-warning">
+                <div class="card-header bg-warning-subtle">
+                    <strong>📝 Návrh na kontrolu (ešte nie je uložený do skladu)</strong>
+                </div>
+                <div class="card-body">
+                    <input id="aiDraftId" type="hidden" value="">
+                    <div class="row g-2">
+                        <div class="col-md-6">
+                            <label class="form-label">Názov</label>
+                            <input id="aiFieldNazov" class="form-control" type="text">
+                        </div>
+                        <div class="col-md-3">
+                            <label class="form-label">Kód</label>
+                            <input id="aiFieldKod" class="form-control" type="text">
+                        </div>
+                        <div class="col-md-3">
+                            <label class="form-label">Typ</label>
+                            <select id="aiFieldTyp" class="form-select">
+                                <option value="SUROVINA">Surovina</option>
+                                <option value="POLOTOVAR">Polotovar</option>
+                                <option value="KOMPONENT">Komponent</option>
+                            </select>
+                        </div>
+
+                        <div class="col-md-2">
+                            <label class="form-label">Jednotka</label>
+                            <input id="aiFieldJednotka" class="form-control" type="text">
+                        </div>
+                        <div class="col-md-2">
+                            <label class="form-label">Min. zásoba</label>
+                            <input id="aiFieldMinimalna" class="form-control" type="number" step="0.01" min="0">
+                        </div>
+                        <div class="col-md-2">
+                            <label class="form-label">Cena / jedn.</label>
+                            <input id="aiFieldCena" class="form-control" type="number" step="0.01" min="0">
+                        </div>
+                        <div class="col-md-2">
+                            <label class="form-label">Priemer (mm)</label>
+                            <input id="aiFieldPriemer" class="form-control" type="number" step="0.01" min="0">
+                        </div>
+                        <div class="col-md-2">
+                            <label class="form-label">Tyč (m)</label>
+                            <input id="aiFieldTyc" class="form-control" type="number" step="0.01" min="0">
+                        </div>
+                        <div class="col-md-2">
+                            <label class="form-label">kg/m</label>
+                            <input id="aiFieldKgM" class="form-control" type="number" step="0.001" min="0">
+                        </div>
+                        <div class="col-md-2">
+                            <label class="form-label">Akt. zásoba</label>
+                            <input id="aiFieldAktualna" class="form-control" type="number" step="0.01" min="0">
+                        </div>
+                        <div class="col-md-12">
+                            <label class="form-label">Poznámka z AI</label>
+                            <textarea id="aiFieldPoznamka" class="form-control" rows="2"></textarea>
+                        </div>
+                    </div>
+
+                    <div class="d-flex align-items-center gap-2 mt-3">
+                        <button id="btnConfirmAiMaterial" class="btn btn-success">✅ Potvrdiť a uložiť do materiálu</button>
+                        <span id="aiMaterialMeta" class="small text-muted"></span>
+                    </div>
+                </div>
+            </div>
+        </div>
+    </div>
+
     <!-- Tabuľka materiálov -->
     <div class="card shadow-sm mb-4">
         <div class="card-header bg-primary text-white">
@@ -238,4 +334,142 @@
     </div>
 
 </div>
+{% endblock %}
+
+{% block extra_js %}
+<script>
+    (function () {
+        const queryInput = document.getElementById('aiMaterialQuery');
+        const sourceInput = document.getElementById('aiMaterialSourceUrl');
+        const statusEl = document.getElementById('aiMaterialStatus');
+        const draftCard = document.getElementById('aiMaterialDraftCard');
+        const draftIdInput = document.getElementById('aiDraftId');
+        const generateBtn = document.getElementById('btnGenerateAiMaterial');
+        const confirmBtn = document.getElementById('btnConfirmAiMaterial');
+        const metaEl = document.getElementById('aiMaterialMeta');
+
+        function getCookie(name) {
+            const value = `; ${document.cookie}`;
+            const parts = value.split(`; ${name}=`);
+            if (parts.length === 2) return parts.pop().split(';').shift();
+            return '';
+        }
+
+        function setStatus(text, isError) {
+            statusEl.textContent = text;
+            statusEl.classList.toggle('text-danger', Boolean(isError));
+            statusEl.classList.toggle('text-muted', !isError);
+        }
+
+        function fillDraftForm(payload) {
+            const navrh = payload.navrh || {};
+            draftIdInput.value = payload.id || '';
+            document.getElementById('aiFieldNazov').value = navrh.nazov || '';
+            document.getElementById('aiFieldKod').value = navrh.kod || '';
+            document.getElementById('aiFieldTyp').value = navrh.typ || 'SUROVINA';
+            document.getElementById('aiFieldJednotka').value = navrh.jednotka || 'kg';
+            document.getElementById('aiFieldMinimalna').value = navrh.minimalna_zasoba || 0;
+            document.getElementById('aiFieldCena').value = navrh.cena_za_jednotku || 0;
+            document.getElementById('aiFieldPriemer').value = navrh.priemer_mm || 0;
+            document.getElementById('aiFieldTyc').value = navrh.tyc_dlzka_m || 0;
+            document.getElementById('aiFieldKgM').value = navrh.kg_na_meter || 0;
+            document.getElementById('aiFieldAktualna').value = navrh.aktualna_zasoba || 0;
+            document.getElementById('aiFieldPoznamka').value = navrh.poznamka || '';
+
+            const confidence = payload.confidence !== null && payload.confidence !== undefined
+                ? `Dôvera: ${Number(payload.confidence).toFixed(2)}`
+                : 'Dôvera: n/a';
+            const model = payload.ai_model ? `Model: ${payload.ai_model}` : '';
+            metaEl.textContent = [model, confidence].filter(Boolean).join(' | ');
+            draftCard.classList.remove('d-none');
+        }
+
+        generateBtn?.addEventListener('click', async function () {
+            const query = (queryInput?.value || '').trim();
+            const source_url = (sourceInput?.value || '').trim();
+            if (!query) {
+                setStatus('Zadaj dopyt pre AI návrh.', true);
+                return;
+            }
+
+            generateBtn.disabled = true;
+            setStatus('Generujem AI návrh...', false);
+
+            try {
+                const response = await fetch("{% url 'ai_material_navrh' %}", {
+                    method: 'POST',
+                    headers: {
+                        'Content-Type': 'application/json',
+                        'X-CSRFToken': getCookie('csrftoken'),
+                    },
+                    body: JSON.stringify({ query, source_url }),
+                });
+                const data = await response.json();
+                if (data.status !== 'ok') {
+                    setStatus(data.message || 'AI návrh sa nepodarilo vytvoriť.', true);
+                    if (data.navrh) {
+                        fillDraftForm(data.navrh);
+                    }
+                    return;
+                }
+
+                fillDraftForm(data.navrh || {});
+                setStatus(data.message || 'Návrh je pripravený.', false);
+            } catch (error) {
+                setStatus('AI návrh sa nepodarilo vytvoriť (sieťová chyba).', true);
+            } finally {
+                generateBtn.disabled = false;
+            }
+        });
+
+        confirmBtn?.addEventListener('click', async function () {
+            const navrhId = draftIdInput?.value;
+            if (!navrhId) {
+                setStatus('Najprv vytvor AI návrh.', true);
+                return;
+            }
+
+            const payload = {
+                nazov: document.getElementById('aiFieldNazov').value.trim(),
+                kod: document.getElementById('aiFieldKod').value.trim(),
+                typ: document.getElementById('aiFieldTyp').value,
+                jednotka: document.getElementById('aiFieldJednotka').value.trim(),
+                minimalna_zasoba: document.getElementById('aiFieldMinimalna').value,
+                cena_za_jednotku: document.getElementById('aiFieldCena').value,
+                priemer_mm: document.getElementById('aiFieldPriemer').value,
+                tyc_dlzka_m: document.getElementById('aiFieldTyc').value,
+                kg_na_meter: document.getElementById('aiFieldKgM').value,
+                aktualna_zasoba: document.getElementById('aiFieldAktualna').value,
+                poznamka: document.getElementById('aiFieldPoznamka').value.trim(),
+            };
+
+            confirmBtn.disabled = true;
+            setStatus('Ukladám materiál z návrhu...', false);
+
+            try {
+                const response = await fetch(`/api/material-ai/navrh/${navrhId}/potvrdit/`, {
+                    method: 'POST',
+                    headers: {
+                        'Content-Type': 'application/json',
+                        'X-CSRFToken': getCookie('csrftoken'),
+                    },
+                    body: JSON.stringify(payload),
+                });
+                const data = await response.json();
+
+                if (data.status !== 'ok') {
+                    setStatus(data.message || 'Uloženie z návrhu zlyhalo.', true);
+                    return;
+                }
+
+                setStatus(data.message || 'Materiál bol uložený.', false);
+                window.location.reload();
+            } catch (error) {
+                setStatus('Uloženie sa nepodarilo (sieťová chyba).', true);
+            } finally {
+                confirmBtn.disabled = false;
+            }
+        });
+    })();
+</script>
 {% endblock %}

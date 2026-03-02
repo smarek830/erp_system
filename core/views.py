@@ -3,12 +3,14 @@ from urllib import request
 from django.contrib.auth.decorators import login_required, permission_required
 from django.contrib.auth import logout
 from django.shortcuts import render, get_object_or_404, redirect
+from django.conf import settings
+from django.urls import reverse
 from .models import (
     Produkt, Objednavka, Stroj, VyrobnyZaznam, KontrolaKvality, 
     HlasenieVyroby, Operacia, Kontrakt, Material, VyrobnaDavka,
     SkladHotovychDielov, PrijemkaHotovychDielov, VydajkaHotovychDielov,
     PrijemkaNaSklad, VydajkaZoSkladu, OperaciaVyroby, OperatorNaOperacii,
-    KontrolnyParameter, MeraniePriKontrole,
+    KontrolnyParameter, MeraniePriKontrole, MaterialAINavrh,
 )
 from decimal import Decimal, InvalidOperation
 from django.http import JsonResponse, HttpResponse
@@ -22,6 +24,8 @@ import hashlib
 import unicodedata
 from .pdf_generator import generate_sprievodka_pdf
 from datetime import datetime, timedelta, date
+from math import ceil
+from urllib.parse import urlparse
 import openpyxl
 from openpyxl.styles import Font, PatternFill, Alignment
 
@@ -38,6 +42,210 @@ def _api_error(message, **extra):
     if extra:
         payload.update(extra)
     return JsonResponse(payload)
+
+
+def _safe_decimal(value, default='0'):
+    try:
+        return Decimal(str(value))
+    except (InvalidOperation, TypeError, ValueError):
+        return Decimal(default)
+
+
+def _get_allowed_material_ai_domains():
+    configured = getattr(settings, 'AI_MATERIAL_ALLOWED_DOMAINS', [])
+    domains = [str(item).strip().lower() for item in configured if str(item).strip()]
+    if domains:
+        return domains
+    return ['ferona.sk', 'profimetal.sk', 'mersteel.eu']
+
+
+def _is_allowed_material_ai_url(source_url):
+    if not source_url:
+        return True, ''
+    try:
+        parsed = urlparse(source_url)
+    except ValueError:
+        return False, ''
+
+    if parsed.scheme not in {'http', 'https'} or not parsed.netloc:
+        return False, ''
+
+    host = parsed.netloc.lower().split(':')[0]
+    allowed = _get_allowed_material_ai_domains()
+    is_allowed = any(host == domain or host.endswith(f'.{domain}') for domain in allowed)
+    return is_allowed, host
+
+
+def _extract_first_json_object(raw_text):
+    if not raw_text:
+        return None
+    start = raw_text.find('{')
+    end = raw_text.rfind('}')
+    if start < 0 or end < 0 or end <= start:
+        return None
+    candidate = raw_text[start:end + 1]
+    try:
+        return json.loads(candidate)
+    except (TypeError, ValueError, json.JSONDecodeError):
+        return None
+
+
+def _generate_material_ai_response(query, source_url=''):
+    api_key = getattr(settings, 'OPENAI_API_KEY', '')
+    if not api_key:
+        raise ValueError('Chýba OPENAI_API_KEY v nastaveniach servera.')
+
+    try:
+        from openai import OpenAI
+    except Exception as exc:
+        raise ValueError('Knižnica openai nie je nainštalovaná. Doplň ju do requirements.') from exc
+
+    model_name = getattr(settings, 'OPENAI_MATERIAL_MODEL', 'gpt-4.1-mini')
+    client = OpenAI(api_key=api_key)
+
+    source_hint = source_url.strip() if source_url else 'Bez konkrétnej URL, hľadaj na dôveryhodných slovenských weboch.'
+    allowed_domains = ', '.join(_get_allowed_material_ai_domains())
+
+    prompt = (
+        'Si asistent pre nákup materiálu v strojárskej výrobe. '\
+        'Vráť STRICTNE iba JSON objekt bez markdownu. '\
+        'Použi verejne dostupné údaje a keď si nie si istý, nechaj hodnotu null. '\
+        f'Povolené domény: {allowed_domains}. '\
+        f'Vstupný dopyt: {query}. '\
+        f'Zdroj: {source_hint}. '\
+        'JSON schema: '
+        '{'
+        '"nazov":"",'
+        '"kod":"",'
+        '"typ":"SUROVINA|POLOTOVAR|KOMPONENT",'
+        '"jednotka":"kg|ks|tyc",'
+        '"minimalna_zasoba":0,'
+        '"cena_za_jednotku":0,'
+        '"priemer_mm":0,'
+        '"tyc_dlzka_m":0,'
+        '"kg_na_meter":0,'
+        '"aktualna_zasoba":0,'
+        '"confidence":0.0,'
+        '"poznamka":"stručné zhrnutie zdroja a neistôt"'
+        '}'
+    )
+
+    response = client.responses.create(
+        model=model_name,
+        input=prompt,
+    )
+
+    raw_text = getattr(response, 'output_text', '') or ''
+    parsed = _extract_first_json_object(raw_text)
+    if not parsed:
+        raise ValueError('AI vrátila neplatný formát. Skús upresniť dopyt alebo URL.')
+
+    return {
+        'model': model_name,
+        'raw_text': raw_text,
+        'data': parsed,
+    }
+
+
+def _serialize_material_ai_navrh(navrh):
+    data = navrh.navrh_data or {}
+    return {
+        'id': navrh.pk,
+        'stav': navrh.stav,
+        'query': navrh.query,
+        'source_url': navrh.source_url,
+        'source_domain': navrh.source_domain,
+        'ai_model': navrh.ai_model,
+        'confidence': float(navrh.confidence) if navrh.confidence is not None else None,
+        'navrh': {
+            'nazov': data.get('nazov') or '',
+            'kod': data.get('kod') or '',
+            'typ': data.get('typ') or 'SUROVINA',
+            'jednotka': data.get('jednotka') or 'kg',
+            'minimalna_zasoba': str(data.get('minimalna_zasoba') if data.get('minimalna_zasoba') is not None else 0),
+            'cena_za_jednotku': str(data.get('cena_za_jednotku') if data.get('cena_za_jednotku') is not None else 0),
+            'priemer_mm': str(data.get('priemer_mm') if data.get('priemer_mm') is not None else 0),
+            'tyc_dlzka_m': str(data.get('tyc_dlzka_m') if data.get('tyc_dlzka_m') is not None else 0),
+            'kg_na_meter': str(data.get('kg_na_meter') if data.get('kg_na_meter') is not None else 0),
+            'aktualna_zasoba': str(data.get('aktualna_zasoba') if data.get('aktualna_zasoba') is not None else 0),
+            'poznamka': data.get('poznamka') or '',
+        },
+    }
+
+
+def _normalize_unit(value):
+    return unicodedata.normalize('NFKD', str(value or '')).encode('ascii', 'ignore').decode('ascii').strip().lower()
+
+
+def _is_kg_unit(value):
+    return _normalize_unit(value) == 'kg'
+
+
+def _is_bar_unit(value):
+    normalized = _normalize_unit(value)
+    return normalized in {'tyc', 'tyce', 'ks'}
+
+
+def _calculate_material_requirement(produkt, mnozstvo):
+    material = getattr(produkt, 'material_ref', None)
+    if not material or not mnozstvo or mnozstvo <= 0:
+        return None
+
+    dlzka_na_kus_mm = float(produkt.dlzka_na_kus_mm or 0)
+    if dlzka_na_kus_mm <= 0:
+        return None
+
+    zasoba = float(material.aktualna_zasoba or 0)
+    jednotka = material.jednotka or ''
+    normalized_unit = _normalize_unit(jednotka)
+    dlzka_m = (float(mnozstvo) * dlzka_na_kus_mm) / 1000.0
+
+    if _is_kg_unit(normalized_unit):
+        kg_na_meter = float(material.kg_na_meter or 0)
+        if kg_na_meter <= 0:
+            return None
+        potreba = dlzka_m * kg_na_meter
+        return {
+            'material_nazov': material.nazov,
+            'material_kod': material.kod,
+            'potreba': potreba,
+            'zasoba': zasoba,
+            'jednotka': 'kg',
+            'display_decimals': 2,
+        }
+
+    if _is_bar_unit(normalized_unit):
+        tyc_dlzka_m = float(material.tyc_dlzka_m or 0)
+        if tyc_dlzka_m <= 0:
+            return None
+        potreba_tyce = ceil(dlzka_m / tyc_dlzka_m)
+        return {
+            'material_nazov': material.nazov,
+            'material_kod': material.kod,
+            'potreba': float(potreba_tyce),
+            'zasoba': zasoba,
+            'jednotka': jednotka or 'ks',
+            'display_decimals': 0,
+        }
+
+    return None
+
+
+def _build_material_shortage_message(produkt, mnozstvo):
+    data = _calculate_material_requirement(produkt, mnozstvo)
+    if not data:
+        return None
+
+    nedostatok = max(0.0, data['potreba'] - data['zasoba'])
+    if nedostatok <= 0:
+        return None
+
+    decimals = data['display_decimals']
+    needed_display = f"{nedostatok:.{decimals}f}"
+    return (
+        f"Nedostatok materiálu: chýba {needed_display} {data['jednotka']} "
+        f"pre materiál {data['material_nazov']} ({data['material_kod']})."
+    )
 
 
 def _user_has_operator_access(user, objednavka):
@@ -1759,9 +1967,134 @@ def sklad_materialu(request):
         'pod_minimom': pod_minimom,
         'posledne_prijemky': posledne_prijemky,
         'posledne_vydajky': posledne_vydajky,
+        'ai_material_allowed_domains': _get_allowed_material_ai_domains(),
+        'ai_material_navrhy': MaterialAINavrh.objects.select_related('created_by', 'material').all()[:5],
     }
     
     return render(request, 'core/sklad_materialu.html', context)
+
+
+@require_POST
+@login_required
+@permission_required("core.add_material", raise_exception=True)
+def ai_material_navrh(request):
+    payload = _get_json_body(request)
+    if payload is None:
+        return _api_error('Neplatný JSON payload.')
+
+    query = str(payload.get('query') or '').strip()
+    source_url = str(payload.get('source_url') or '').strip()
+
+    if len(query) < 3:
+        return _api_error('Zadaj aspoň stručný názov alebo dopyt materiálu.')
+
+    is_allowed, domain = _is_allowed_material_ai_url(source_url)
+    if not is_allowed:
+        domains = ', '.join(_get_allowed_material_ai_domains())
+        return _api_error(f'Zdrojová URL nie je povolená. Použi slovenské weby: {domains}.')
+
+    try:
+        ai_response = _generate_material_ai_response(query, source_url)
+    except ValueError as exc:
+        return _api_error(str(exc))
+    except Exception:
+        return _api_error('AI služba momentálne neodpovedá. Skús to znova o chvíľu.')
+
+    ai_data = ai_response.get('data') or {}
+    confidence = _safe_decimal(ai_data.get('confidence'), default='0')
+    navrh = MaterialAINavrh.objects.create(
+        query=query,
+        source_url=source_url,
+        source_domain=domain,
+        ai_model=ai_response.get('model') or '',
+        confidence=confidence,
+        navrh_data={
+            'nazov': str(ai_data.get('nazov') or '').strip(),
+            'kod': str(ai_data.get('kod') or '').strip(),
+            'typ': str(ai_data.get('typ') or 'SUROVINA').strip().upper() or 'SUROVINA',
+            'jednotka': str(ai_data.get('jednotka') or 'kg').strip(),
+            'minimalna_zasoba': str(ai_data.get('minimalna_zasoba') if ai_data.get('minimalna_zasoba') is not None else 0),
+            'cena_za_jednotku': str(ai_data.get('cena_za_jednotku') if ai_data.get('cena_za_jednotku') is not None else 0),
+            'priemer_mm': str(ai_data.get('priemer_mm') if ai_data.get('priemer_mm') is not None else 0),
+            'tyc_dlzka_m': str(ai_data.get('tyc_dlzka_m') if ai_data.get('tyc_dlzka_m') is not None else 0),
+            'kg_na_meter': str(ai_data.get('kg_na_meter') if ai_data.get('kg_na_meter') is not None else 0),
+            'aktualna_zasoba': str(ai_data.get('aktualna_zasoba') if ai_data.get('aktualna_zasoba') is not None else 0),
+            'poznamka': str(ai_data.get('poznamka') or '').strip(),
+        },
+        raw_response=ai_response.get('raw_text') or '',
+        created_by=request.user,
+    )
+
+    if not navrh.navrh_data.get('nazov') or not navrh.navrh_data.get('kod'):
+        return _api_error(
+            'AI návrh je neúplný (chýba názov alebo kód). Skús presnejší dopyt alebo konkrétnu URL.',
+            navrh=_serialize_material_ai_navrh(navrh),
+        )
+
+    return _api_ok('AI návrh pripravený. Skontroluj a potvrď uloženie do skladu.', navrh=_serialize_material_ai_navrh(navrh))
+
+
+@require_POST
+@login_required
+@permission_required("core.add_material", raise_exception=True)
+def ai_material_navrh_potvrdit(request, pk):
+    payload = _get_json_body(request)
+    if payload is None:
+        return _api_error('Neplatný JSON payload.')
+
+    navrh = get_object_or_404(MaterialAINavrh, pk=pk)
+    if navrh.stav != 'DRAFT':
+        return _api_error('Tento návrh už bol spracovaný.')
+
+    typ = str(payload.get('typ') or 'SUROVINA').strip().upper()
+    if typ not in {'SUROVINA', 'POLOTOVAR', 'KOMPONENT'}:
+        typ = 'SUROVINA'
+
+    nazov = str(payload.get('nazov') or '').strip()
+    kod = str(payload.get('kod') or '').strip()
+    if not nazov or not kod:
+        return _api_error('Názov a kód materiálu sú povinné.')
+
+    if Material.objects.filter(kod=kod).exists():
+        return _api_error(f'Materiál s kódom "{kod}" už existuje. Uprav kód a skús znova.')
+
+    material = Material.objects.create(
+        nazov=nazov,
+        kod=kod,
+        typ=typ,
+        jednotka=str(payload.get('jednotka') or 'kg').strip() or 'kg',
+        minimalna_zasoba=_safe_decimal(payload.get('minimalna_zasoba')),
+        cena_za_jednotku=_safe_decimal(payload.get('cena_za_jednotku')),
+        priemer_mm=_safe_decimal(payload.get('priemer_mm')),
+        tyc_dlzka_m=_safe_decimal(payload.get('tyc_dlzka_m')),
+        kg_na_meter=_safe_decimal(payload.get('kg_na_meter')),
+        aktualna_zasoba=_safe_decimal(payload.get('aktualna_zasoba')),
+    )
+
+    navrh.stav = 'APPROVED'
+    navrh.approved_by = request.user
+    navrh.approved_at = timezone.now()
+    navrh.material = material
+    navrh.navrh_data = {
+        'nazov': material.nazov,
+        'kod': material.kod,
+        'typ': material.typ,
+        'jednotka': material.jednotka,
+        'minimalna_zasoba': str(material.minimalna_zasoba),
+        'cena_za_jednotku': str(material.cena_za_jednotku),
+        'priemer_mm': str(material.priemer_mm),
+        'tyc_dlzka_m': str(material.tyc_dlzka_m),
+        'kg_na_meter': str(material.kg_na_meter),
+        'aktualna_zasoba': str(material.aktualna_zasoba),
+        'poznamka': str(payload.get('poznamka') or ''),
+    }
+    navrh.save(update_fields=['stav', 'approved_by', 'approved_at', 'material', 'navrh_data', 'updated_at'])
+
+    return _api_ok(
+        f'Materiál "{material.nazov}" bol vytvorený z AI návrhu.',
+        material_pk=material.pk,
+        edit_url=reverse('upravit_material', kwargs={'pk': material.pk}),
+    )
 
 
 # ========================================
@@ -1780,13 +2113,20 @@ def nova_objednavka(request):
     if request.method == 'POST':
         form = ObjednavkaForm(request.POST)
         if form.is_valid():
-            objednavka = form.save(commit=False)
-            objednavka.stav = 'nova'
-            objednavka.vyrobene_mnozstvo = 0
-            objednavka.save()
-            
-            messages.success(request, f'✅ Objednávka #{objednavka.cislo_objednavky} bola úspešne vytvorená!')
-            return redirect('plan_vyroby')
+            produkt = form.cleaned_data.get('produkt')
+            mnozstvo = form.cleaned_data.get('mnozstvo')
+            shortage_message = _build_material_shortage_message(produkt, mnozstvo)
+            if shortage_message:
+                form.add_error(None, shortage_message)
+                messages.error(request, f'❌ {shortage_message}')
+            else:
+                objednavka = form.save(commit=False)
+                objednavka.stav = 'nova'
+                objednavka.vyrobene_mnozstvo = 0
+                objednavka.save()
+                
+                messages.success(request, f'✅ Objednávka #{objednavka.cislo_objednavky} bola úspešne vytvorená!')
+                return redirect('plan_vyroby')
     else:
         form = ObjednavkaForm()
     
@@ -1878,9 +2218,16 @@ def upravit_objednavku(request, pk):
     if request.method == 'POST':
         form = ObjednavkaForm(request.POST, instance=objednavka)
         if form.is_valid():
-            form.save()
-            messages.success(request, f'✅ Objednávka #{objednavka.cislo_objednavky} bola aktualizovaná!')
-            return redirect('detail_zakazky', pk=objednavka.pk)
+            produkt = form.cleaned_data.get('produkt')
+            mnozstvo = form.cleaned_data.get('mnozstvo')
+            shortage_message = _build_material_shortage_message(produkt, mnozstvo)
+            if shortage_message:
+                form.add_error(None, shortage_message)
+                messages.error(request, f'❌ {shortage_message}')
+            else:
+                form.save()
+                messages.success(request, f'✅ Objednávka #{objednavka.cislo_objednavky} bola aktualizovaná!')
+                return redirect('detail_zakazky', pk=objednavka.pk)
     else:
         form = ObjednavkaForm(instance=objednavka)
     
@@ -2033,7 +2380,7 @@ def novy_produkt(request):
     from django.contrib import messages
     
     if request.method == 'POST':
-        form = ProduktForm(request.POST)
+        form = ProduktForm(request.POST, request.FILES)
         if form.is_valid():
             form.save()
             messages.success(request, f'✅ Produkt "{form.instance.nazov}" bol vytvorený!')
@@ -2059,7 +2406,7 @@ def upravit_produkt(request, pk):
     produkt = get_object_or_404(Produkt, pk=pk)
     
     if request.method == 'POST':
-        form = ProduktForm(request.POST, instance=produkt)
+        form = ProduktForm(request.POST, request.FILES, instance=produkt)
         if form.is_valid():
             form.save()
             messages.success(request, f'✅ Produkt "{produkt.nazov}" bol aktualizovaný!')

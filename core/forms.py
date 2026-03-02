@@ -222,6 +222,8 @@ class ProduktForm(forms.ModelForm):
             'dlzka_na_kus_mm',
             'cas_vyroby',
             'norma_hod',
+            'vykres_pdf',
+            'baliaci_predpis_pdf',
         ]
         widgets = {
             'nazov': forms.TextInput(attrs={
@@ -269,6 +271,14 @@ class ProduktForm(forms.ModelForm):
                 'class': 'form-control',
                 'min': '0'
             }),
+            'vykres_pdf': forms.ClearableFileInput(attrs={
+                'class': 'form-control',
+                'accept': '.pdf,application/pdf'
+            }),
+            'baliaci_predpis_pdf': forms.ClearableFileInput(attrs={
+                'class': 'form-control',
+                'accept': '.pdf,application/pdf'
+            }),
         }
         labels = {
             'nazov': 'Názov produktu *',
@@ -282,6 +292,8 @@ class ProduktForm(forms.ModelForm):
             'dlzka_na_kus_mm': 'Dĺžka na kus (mm)',
             'cas_vyroby': 'Čas výroby (min)',
             'norma_hod': 'Norma (ks/hod)',
+            'vykres_pdf': 'Výkres (PDF)',
+            'baliaci_predpis_pdf': 'Baliaci predpis (PDF)',
         }
 
 

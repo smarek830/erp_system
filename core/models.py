@@ -1048,6 +1048,61 @@ class Material(models.Model):
         verbose_name_plural = "Materiály"
 
 
+class MaterialAINavrh(models.Model):
+    STAV_CHOICES = [
+        ('DRAFT', 'Návrh'),
+        ('APPROVED', 'Potvrdené'),
+        ('REJECTED', 'Zamietnuté'),
+    ]
+
+    stav = models.CharField(max_length=20, choices=STAV_CHOICES, default='DRAFT', verbose_name="Stav")
+    query = models.CharField(max_length=300, verbose_name="Hľadaný dopyt")
+    source_url = models.URLField(blank=True, verbose_name="Zdrojová URL")
+    source_domain = models.CharField(max_length=200, blank=True, verbose_name="Zdrojová doména")
+    ai_model = models.CharField(max_length=100, blank=True, verbose_name="AI model")
+    confidence = models.DecimalField(max_digits=4, decimal_places=2, null=True, blank=True, verbose_name="Dôvera")
+
+    navrh_data = models.JSONField(default=dict, blank=True, verbose_name="Návrh dát")
+    raw_response = models.TextField(blank=True, verbose_name="Raw AI odpoveď")
+
+    created_by = models.ForeignKey(
+        User,
+        on_delete=models.SET_NULL,
+        null=True,
+        related_name='material_ai_navrhy_vytvorene',
+        verbose_name="Vytvoril"
+    )
+    approved_by = models.ForeignKey(
+        User,
+        on_delete=models.SET_NULL,
+        null=True,
+        blank=True,
+        related_name='material_ai_navrhy_potvrdene',
+        verbose_name="Potvrdil"
+    )
+    approved_at = models.DateTimeField(null=True, blank=True, verbose_name="Dátum potvrdenia")
+
+    material = models.ForeignKey(
+        Material,
+        on_delete=models.SET_NULL,
+        null=True,
+        blank=True,
+        related_name='ai_navrhy',
+        verbose_name="Vytvorený materiál"
+    )
+
+    created_at = models.DateTimeField(auto_now_add=True, verbose_name="Vytvorené")
+    updated_at = models.DateTimeField(auto_now=True, verbose_name="Aktualizované")
+
+    def __str__(self):
+        return f"AI návrh: {self.query} ({self.get_stav_display()})"
+
+    class Meta:
+        verbose_name = "AI návrh materiálu"
+        verbose_name_plural = "AI návrhy materiálu"
+        ordering = ['-created_at']
+
+
 # 10. PRÍJEMKA NA SKLAD
 class PrijemkaNaSklad(models.Model):
     material = models.ForeignKey(Material, on_delete=models.PROTECT)

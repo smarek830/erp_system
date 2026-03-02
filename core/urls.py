@@ -42,6 +42,8 @@ urlpatterns = [
     path('api/operator/end-work/<int:pk>/', views.end_work, name='end_work'),
     path('api/operator/report-problem/<int:pk>/', views.report_problem, name='report_problem'),
     path('api/operator/kontrola-kvality/<int:pk>/', views.uloz_kontrolu_kvality, name='uloz_kontrolu_kvality'),
+    path('api/material-ai/navrh/', views.ai_material_navrh, name='ai_material_navrh'),
+    path('api/material-ai/navrh/<int:pk>/potvrdit/', views.ai_material_navrh_potvrdit, name='ai_material_navrh_potvrdit'),
     path('api/sprievodka/<int:pk>/', views.download_sprievodka, name='download_sprievodka'),
     path('api/sprievodka/davka/<int:pk>/', views.download_sprievodka_davka, name='download_sprievodka_davka'),
 

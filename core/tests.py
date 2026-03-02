@@ -1,5 +1,7 @@
 from decimal import Decimal
 from datetime import date, timedelta
+import json
+from unittest.mock import patch
 
 from django.test import TestCase, Client
 from django.contrib.auth.models import User
@@ -11,6 +13,7 @@ from django.core.files.uploadedfile import SimpleUploadedFile
 from .models import (
     Stroj, Produkt, Operacia, Objednavka, OperaciaVyroby,
     KontrolnyParameter, KontrolaKvality, MeraniePriKontrole,
+    Material, MaterialAINavrh,
 )
 
 
@@ -97,6 +100,82 @@ class ObjednavkaMozeUzavrietTest(TestCase):
         self.assertIn('5', dovod)
 
 
+class ObjednavkaMaterialShortageValidationTest(TestCase):
+    def setUp(self):
+        from .models import Material
+
+        self.material = Material.objects.create(
+            nazov='Test materiál shortage',
+            kod='MAT-SHORT-001',
+            jednotka='kg',
+            aktualna_zasoba=Decimal('2.00'),
+            minimalna_zasoba=Decimal('0.50'),
+            kg_na_meter=Decimal('1.00'),
+            tyc_dlzka_m=Decimal('6.00'),
+        )
+        self.produkt = Produkt.objects.create(
+            nazov='Produkt shortage test',
+            cislo_dielu='P-SHORT-001',
+            material_ref=self.material,
+            dlzka_na_kus_mm=Decimal('1000.00'),
+            cas_vyroby=10,
+            norma_hod=6,
+        )
+
+    def test_nova_objednavka_blocks_when_material_missing(self):
+        user = User.objects.create_user('obj_add_user', password='pass')
+        user.user_permissions.add(Permission.objects.get(codename='add_objednavka'))
+
+        client = Client()
+        client.force_login(user)
+
+        response = client.post(
+            reverse('nova_objednavka'),
+            data={
+                'zakaznik': 'Shortage klient',
+                'produkt': str(self.produkt.pk),
+                'mnozstvo': '5',
+                'datum_pozadovane': (date.today() + timedelta(days=7)).isoformat(),
+                'poznamka': '',
+            },
+        )
+
+        self.assertEqual(response.status_code, 200)
+        self.assertContains(response, 'Nedostatok materiálu')
+        self.assertEqual(Objednavka.objects.count(), 0)
+
+    def test_upravit_objednavku_blocks_when_material_missing(self):
+        user = User.objects.create_user('obj_change_user', password='pass')
+        user.user_permissions.add(Permission.objects.get(codename='change_objednavka'))
+
+        objednavka = Objednavka.objects.create(
+            produkt=self.produkt,
+            zakaznik='Edit shortage klient',
+            mnozstvo=1,
+            datum_pozadovane=date.today() + timedelta(days=7),
+        )
+
+        client = Client()
+        client.force_login(user)
+
+        response = client.post(
+            reverse('upravit_objednavku', kwargs={'pk': objednavka.pk}),
+            data={
+                'cislo_objednavky': objednavka.cislo_objednavky,
+                'zakaznik': objednavka.zakaznik,
+                'produkt': str(self.produkt.pk),
+                'mnozstvo': '5',
+                'datum_pozadovane': objednavka.datum_pozadovane.isoformat(),
+                'poznamka': objednavka.poznamka,
+            },
+        )
+
+        self.assertEqual(response.status_code, 200)
+        self.assertContains(response, 'Nedostatok materiálu')
+        objednavka.refresh_from_db()
+        self.assertEqual(objednavka.mnozstvo, 1)
+
+
 class KontrolnyParameterToleranciaTest(TestCase):
     """MeraniePriKontrole.je_v_tolerancii() works correctly."""
 
@@ -142,6 +221,109 @@ class KontrolnyParameterToleranciaTest(TestCase):
         self.assertFalse(self._meranie('9.899').je_v_tolerancii())
 
 
+class MaterialAiNavrhApiTest(TestCase):
+    def setUp(self):
+        self.client = Client()
+        self.user = User.objects.create_user('ai_material_user', password='pass')
+        self.user.user_permissions.add(Permission.objects.get(codename='add_material'))
+        self.client.force_login(self.user)
+
+    def test_navrh_rejects_non_allowed_domain(self):
+        response = self.client.post(
+            reverse('ai_material_navrh'),
+            data=json.dumps({
+                'query': 'ocelova gulatina C45',
+                'source_url': 'https://example.com/material',
+            }),
+            content_type='application/json',
+        )
+
+        self.assertEqual(response.status_code, 200)
+        payload = response.json()
+        self.assertEqual(payload['status'], 'error')
+        self.assertIn('Zdrojová URL nie je povolená', payload['message'])
+
+    @patch('core.views._generate_material_ai_response')
+    def test_navrh_creates_draft(self, mock_generate):
+        mock_generate.return_value = {
+            'model': 'gpt-4.1-mini',
+            'raw_text': '{"nazov":"Oceľ C45","kod":"C45-20","typ":"SUROVINA"}',
+            'data': {
+                'nazov': 'Oceľ C45 Ø20',
+                'kod': 'C45-20',
+                'typ': 'SUROVINA',
+                'jednotka': 'kg',
+                'minimalna_zasoba': 100,
+                'cena_za_jednotku': 1.8,
+                'priemer_mm': 20,
+                'tyc_dlzka_m': 6,
+                'kg_na_meter': 2.47,
+                'aktualna_zasoba': 0,
+                'confidence': 0.82,
+                'poznamka': 'Test návrh',
+            },
+        }
+
+        response = self.client.post(
+            reverse('ai_material_navrh'),
+            data=json.dumps({
+                'query': 'ocelova gulatina C45 20mm',
+                'source_url': 'https://ferona.sk/ocel-c45',
+            }),
+            content_type='application/json',
+        )
+
+        self.assertEqual(response.status_code, 200)
+        payload = response.json()
+        self.assertEqual(payload['status'], 'ok')
+        self.assertEqual(MaterialAINavrh.objects.count(), 1)
+        navrh = MaterialAINavrh.objects.first()
+        self.assertEqual(navrh.stav, 'DRAFT')
+        self.assertEqual(navrh.navrh_data.get('kod'), 'C45-20')
+
+    def test_potvrdenie_navrhu_vytvori_material(self):
+        navrh = MaterialAINavrh.objects.create(
+            query='ocel c45',
+            source_url='https://ferona.sk/ocel-c45',
+            source_domain='ferona.sk',
+            ai_model='gpt-4.1-mini',
+            navrh_data={
+                'nazov': 'Oceľ C45 Ø20',
+                'kod': 'C45-20-TEST',
+                'typ': 'SUROVINA',
+                'jednotka': 'kg',
+            },
+            created_by=self.user,
+        )
+
+        response = self.client.post(
+            reverse('ai_material_navrh_potvrdit', kwargs={'pk': navrh.pk}),
+            data=json.dumps({
+                'nazov': 'Oceľ C45 Ø20',
+                'kod': 'C45-20-TEST',
+                'typ': 'SUROVINA',
+                'jednotka': 'kg',
+                'minimalna_zasoba': '50',
+                'cena_za_jednotku': '1.75',
+                'priemer_mm': '20',
+                'tyc_dlzka_m': '6',
+                'kg_na_meter': '2.47',
+                'aktualna_zasoba': '0',
+                'poznamka': 'potvrdene testom',
+            }),
+            content_type='application/json',
+        )
+
+        self.assertEqual(response.status_code, 200)
+        payload = response.json()
+        self.assertEqual(payload['status'], 'ok')
+        self.assertTrue(Material.objects.filter(kod='C45-20-TEST').exists())
+
+        navrh.refresh_from_db()
+        self.assertEqual(navrh.stav, 'APPROVED')
+        self.assertIsNotNone(navrh.material)
+
+
 class ProduktEditPageRenderTest(TestCase):
     def test_upravit_produkt_page_renders_for_user_with_permission(self):
         user = User.objects.create_user('edit_produkt_user', password='pass')
@@ -158,6 +340,79 @@ class ProduktEditPageRenderTest(TestCase):
 
         self.assertEqual(resp.status_code, 200)
         self.assertIn('Upraviť produkt', resp.content.decode('utf-8'))
+
+
+class ProduktFileUploadViewTest(TestCase):
+    def setUp(self):
+        self.client = Client()
+
+    def test_novy_produkt_uploads_vykres_pdf(self):
+        user = User.objects.create_user('add_produkt_user', password='pass')
+        perm = Permission.objects.get(codename='add_produkt')
+        user.user_permissions.add(perm)
+        self.client.force_login(user)
+
+        material = None
+        try:
+            from .models import Material
+            material = Material.objects.create(
+                nazov='Test material upload',
+                kod='MAT-UPL-001',
+                jednotka='kg',
+                aktualna_zasoba=Decimal('100.00'),
+                minimalna_zasoba=Decimal('10.00'),
+            )
+        except Exception:
+            material = None
+
+        data = {
+            'nazov': 'Produkt upload test',
+            'cislo_dielu': 'T-UPL-001',
+            'cislo_vykresu': 'DRW-001',
+            'index': '0',
+            'material': 'Ocel',
+            'rozmer_polotovaru': '10x10',
+            'spotreba_ks': '1.00',
+            'material_ref': str(material.pk) if material else '',
+            'dlzka_na_kus_mm': '100.00',
+            'cas_vyroby': '10',
+            'norma_hod': '6',
+            'vykres_pdf': SimpleUploadedFile('vykres.pdf', b'%PDF-1.4 test', content_type='application/pdf'),
+        }
+
+        resp = self.client.post(reverse('novy_produkt'), data=data)
+        self.assertEqual(resp.status_code, 302)
+
+        produkt = Produkt.objects.get(cislo_dielu='T-UPL-001')
+        self.assertTrue(bool(produkt.vykres_pdf), 'vykres_pdf nebol ulozeny')
+
+    def test_upravit_produkt_uploads_vykres_pdf(self):
+        user = User.objects.create_user('change_produkt_user', password='pass')
+        perm = Permission.objects.get(codename='change_produkt')
+        user.user_permissions.add(perm)
+        self.client.force_login(user)
+
+        produkt = _produkt('T-UPL-EDIT-001')
+        data = {
+            'nazov': produkt.nazov,
+            'cislo_dielu': produkt.cislo_dielu,
+            'cislo_vykresu': produkt.cislo_vykresu or '',
+            'index': produkt.index or '0',
+            'material': produkt.material or '',
+            'rozmer_polotovaru': produkt.rozmer_polotovaru or '',
+            'spotreba_ks': str(produkt.spotreba_ks),
+            'material_ref': str(produkt.material_ref_id or ''),
+            'dlzka_na_kus_mm': str(produkt.dlzka_na_kus_mm),
+            'cas_vyroby': str(produkt.cas_vyroby),
+            'norma_hod': str(produkt.norma_hod),
+            'vykres_pdf': SimpleUploadedFile('vykres_edit.pdf', b'%PDF-1.4 test edit', content_type='application/pdf'),
+        }
+
+        resp = self.client.post(reverse('upravit_produkt', kwargs={'pk': produkt.pk}), data=data)
+        self.assertEqual(resp.status_code, 302)
+
+        produkt.refresh_from_db()
+        self.assertTrue(bool(produkt.vykres_pdf), 'vykres_pdf nebol ulozeny pri uprave')
 
 # ---------------------------------------------------------------------------
 # View / API tests

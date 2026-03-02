@@ -144,3 +144,11 @@ LOGOUT_REDIRECT_URL = '/accounts/login/'
 
 APP_VERSION = "0.1.0"
 APP_BUILD_TS = datetime.now().strftime("%d.%m.%Y %H:%M:%S")
+
+OPENAI_API_KEY = os.environ.get('OPENAI_API_KEY', '')
+OPENAI_MATERIAL_MODEL = os.environ.get('OPENAI_MATERIAL_MODEL', 'gpt-4.1-mini')
+AI_MATERIAL_ALLOWED_DOMAINS = [
+    item.strip().lower()
+    for item in os.environ.get('AI_MATERIAL_ALLOWED_DOMAINS', 'ferona.sk,profimetal.sk,mersteel.eu').split(',')
+    if item.strip()
+]

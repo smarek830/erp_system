@@ -1,10 +1,8 @@
 from django.contrib import admin
-from django.urls import path, include  # <--- Pridaj 'include'
+from django.urls import path, include
 from django.conf import settings
 from django.conf.urls.static import static
 from django.contrib.staticfiles.urls import staticfiles_urlpatterns
-from django.contrib import admin
-from django.urls import path, include
 from core import views as core_views
 
 urlpatterns = [
@@ -14,11 +12,10 @@ urlpatterns = [
     path('admin/logout/', core_views.quick_logout, name='admin_logout_quick'),
     path('admin/', admin.site.urls),
     path('logout/', core_views.quick_logout, name='logout_quick'),
-    path('', include('core.urls')),  # <--- Toto prepojí tvoju appku
-    path("accounts/", include("django.contrib.auth.urls")),  # login/logout
+    path('', include('core.urls')),
+    path("accounts/", include("django.contrib.auth.urls")),
 ]
 
-# Toto zabezpečí, že budú fungovať odkazy na PDF a obrázky
 if settings.DEBUG:
     urlpatterns += staticfiles_urlpatterns()
     urlpatterns += static(settings.MEDIA_URL, document_root=settings.MEDIA_ROOT)
