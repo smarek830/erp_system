@@ -295,6 +295,19 @@
             updateSubmitState(currentHasShortage);
         };
 
+        const normalizeUnit = (value) => String(value || '')
+            .trim()
+            .toLowerCase()
+            .normalize('NFD')
+            .replace(/[\u0300-\u036f]/g, '');
+
+        const isKgUnit = (unit) => normalizeUnit(unit) === 'kg';
+
+        const isBarUnit = (unit) => {
+            const normalized = normalizeUnit(unit);
+            return normalized === 'tyc' || normalized === 'tyce' || normalized === 'ks';
+        };
+
         const updateInfo = () => {
             const produktId = selectEl.value;
             if (!produktId) {
@@ -327,7 +340,7 @@
             const kgNaMeter = parseFloat(data.kg_na_meter || 0);
             const zasoba = parseFloat(data.zasoba || 0);
             const minZasoba = parseFloat(data.minimalna_zasoba || 0);
-            const jednotkaNorm = String(data.jednotka || '').trim().toLowerCase();
+            const jednotkaNorm = normalizeUnit(data.jednotka);
 
             // Update material name and properties
             document.getElementById("material-text").textContent = 
@@ -361,7 +374,7 @@
             let shortageUnit = 'kg';
             let afterIssueStock = 0;
 
-            if (jednotkaNorm === "kg" && kg > 0) {
+            if (isKgUnit(jednotkaNorm) && kg > 0) {
                 const nedostatok = Math.max(0, kg - zasoba);
                 if (nedostatok > 0) {
                     document.getElementById("nedostatok").textContent = nedostatok.toFixed(2);
@@ -385,7 +398,7 @@
                 } else {
                     podMinimomRow.style.display = "none";
                 }
-            } else if ((jednotkaNorm === 'tyc' || jednotkaNorm === 'tyče' || jednotkaNorm === 'ks') && tyce > 0) {
+            } else if (isBarUnit(jednotkaNorm) && tyce > 0) {
                 const nedostatokTyce = Math.max(0, tyce - zasoba);
                 if (nedostatokTyce > 0) {
                     document.getElementById("nedostatok").textContent = nedostatokTyce.toFixed(0);

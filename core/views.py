@@ -19,6 +19,7 @@ from django.db.models import Q, Sum, Count, F, Prefetch  # ← DÔLEŽITÉ: F je
 from django.db.models.functions import TruncDate
 import json
 import hashlib
+import unicodedata
 from .pdf_generator import generate_sprievodka_pdf
 from datetime import datetime, timedelta, date
 import openpyxl
@@ -740,6 +741,17 @@ def zoznam_strojov(request):
 
 @login_required
 def operator_dashboard(request):
+    def _normalize_unit(value):
+        normalized = unicodedata.normalize('NFD', str(value or '').strip().lower())
+        return ''.join(ch for ch in normalized if unicodedata.category(ch) != 'Mn')
+
+    def _is_kg_unit(value):
+        return _normalize_unit(value) == 'kg'
+
+    def _is_bar_unit(value):
+        normalized = _normalize_unit(value)
+        return normalized in {'tyc', 'tyce', 'ks'}
+
     now = timezone.now()
     last_30_days = now - timedelta(days=30)
 
@@ -810,6 +822,77 @@ def operator_dashboard(request):
         else f"https://ui-avatars.com/api/?name={initials}&background=0d6efd&color=fff&size=200"
     )
 
+    from math import ceil
+    otvorene_zakazky = Objednavka.objects.exclude(stav='hotovo').select_related('produkt', 'produkt__material_ref')
+    potreby_materialu = {}
+
+    for zakazka in otvorene_zakazky:
+        produkt = zakazka.produkt
+        material = produkt.material_ref
+        if not material:
+            continue
+
+        zostava = max(0, int(zakazka.zostava_vyroba() or 0))
+        if zostava <= 0:
+            continue
+
+        dlzka_na_kus = float(produkt.dlzka_na_kus_mm or 0)
+        tyc_dlzka_m = float(material.tyc_dlzka_m or 0)
+        kg_na_meter = float(material.kg_na_meter or 0)
+        jednotka = material.jednotka or 'kg'
+
+        required = 0.0
+        if _is_kg_unit(jednotka):
+            if dlzka_na_kus <= 0 or kg_na_meter <= 0:
+                continue
+            dlzka_m = (dlzka_na_kus * zostava) / 1000
+            required = dlzka_m * kg_na_meter
+        elif _is_bar_unit(jednotka):
+            if dlzka_na_kus <= 0 or tyc_dlzka_m <= 0:
+                continue
+            dlzka_m = (dlzka_na_kus * zostava) / 1000
+            required = float(ceil(dlzka_m / tyc_dlzka_m)) if dlzka_m > 0 else 0.0
+        else:
+            continue
+
+        if required <= 0:
+            continue
+
+        data = potreby_materialu.setdefault(material.id, {
+            'nazov': material.nazov,
+            'kod': material.kod,
+            'jednotka': jednotka,
+            'required': 0.0,
+            'zasoba': float(material.aktualna_zasoba or 0),
+        })
+        data['required'] += required
+
+    shortage_materials = []
+    for data in potreby_materialu.values():
+        missing = data['required'] - data['zasoba']
+        if missing <= 0:
+            continue
+
+        if _is_kg_unit(data['jednotka']):
+            required_display = round(data['required'], 2)
+            stock_display = round(data['zasoba'], 2)
+            missing_display = round(missing, 2)
+        else:
+            required_display = int(ceil(data['required']))
+            stock_display = int(data['zasoba'])
+            missing_display = int(ceil(missing))
+
+        shortage_materials.append({
+            'nazov': data['nazov'],
+            'kod': data['kod'],
+            'jednotka': data['jednotka'],
+            'required': required_display,
+            'zasoba': stock_display,
+            'missing': missing_display,
+        })
+
+    shortage_materials.sort(key=lambda item: item['missing'], reverse=True)
+
     return render(request, 'core/operator/dashboard.html', {
         'rozpracovane': rozpracovane,
         'nove_priradene': nove_priradene,
@@ -828,6 +911,7 @@ def operator_dashboard(request):
         'dostupne_nove': nove_dostupne.count(),
         'dostupne_rozpracovane': rozpracovane_dostupne.count(),
         'posledne_ukony': posledne_ukony,
+        'shortage_materials': shortage_materials,
     })
 
 @login_required
@@ -1656,7 +1740,7 @@ def sklad_materialu(request):
         material.potreba_m = round(data['m'], 2)
         material.potreba_kg = round(data['kg'], 2)
         material.potreba_tyce = data['tyce']
-        if material.jednotka.lower() == 'kg':
+        if str(material.jednotka or '').strip().lower() == 'kg':
             material.nedostatok_kg = round(max(0.0, material.potreba_kg - float(material.aktualna_zasoba)), 2)
         else:
             material.nedostatok_kg = None

@@ -81,6 +81,28 @@
 
 {% block content %}
 <div id="operatorDashboardLiveRoot" class="container-fluid px-0 px-md-2">
+    {% if shortage_materials %}
+    <div class="alert alert-warning border-warning shadow-sm mb-3" role="alert">
+        <div class="d-flex justify-content-between align-items-start gap-2 flex-wrap">
+            <div>
+                <strong>⚠️ Chýbajúci materiál pre otvorené zákazky</strong>
+                <div class="small mt-1">
+                    Evidujem {{ shortage_materials|length }} položiek s nedostatkom materiálu. Výroba nie je blokovaná, ale odporúčané je doplnenie skladu.
+                </div>
+            </div>
+            <a href="{% url 'sklad_materialu' %}" class="btn btn-sm btn-outline-warning">🏭 Otvoriť sklad materiálu</a>
+        </div>
+        <div class="mt-2 small">
+            {% for m in shortage_materials|slice:":5" %}
+                <span class="badge rounded-pill bg-danger me-1 mb-1">{{ m.nazov }} ({{ m.kod }}) · chýba {{ m.missing }} {{ m.jednotka }}</span>
+            {% endfor %}
+            {% if shortage_materials|length > 5 %}
+                <span class="text-muted">+ {{ shortage_materials|length|add:"-5" }} ďalších</span>
+            {% endif %}
+        </div>
+    </div>
+    {% endif %}
+
     <div class="card shadow-sm operator-profile-card mb-3">
         <div class="card-body p-3 p-md-4">
             <div class="d-flex flex-column flex-md-row align-items-center align-items-md-start gap-3">

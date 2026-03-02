@@ -44,6 +44,27 @@
             <span class="version-badge">Verzia: {{ APP_VERSION }} | Reload: {{ APP_BUILD_TS }}</span>
         </div>
 
+        {% if material_shortage_total > 0 %}
+        <div class="alert alert-warning border-warning shadow-sm" role="alert">
+            <div class="d-flex flex-wrap justify-content-between align-items-start gap-2">
+                <div>
+                    <strong>⚠️ Upozornenie: chýbajúci materiál na sklade</strong>
+                    <div class="small mt-1">
+                        Pod minimom je {{ material_shortage_total }} položiek. Doplňte sklad pre plynulú výrobu.
+                    </div>
+                </div>
+                <a href="{% url 'sklad_materialu' %}" class="btn btn-sm btn-outline-warning">🏭 Sklad materiálu</a>
+            </div>
+            {% if material_shortages %}
+            <div class="mt-2 small">
+                {% for material in material_shortages %}
+                    <span class="badge rounded-pill bg-danger me-1 mb-1">{{ material.nazov }} ({{ material.kod }}) · {{ material.typ }} · chýba {{ material.missing }} {{ material.jednotka }}</span>
+                {% endfor %}
+            </div>
+            {% endif %}
+        </div>
+        {% endif %}
+
         {% block content %}{% endblock %}
     </main>
 
