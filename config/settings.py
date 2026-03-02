@@ -147,6 +147,7 @@ APP_BUILD_TS = datetime.now().strftime("%d.%m.%Y %H:%M:%S")
 
 OPENAI_API_KEY = os.environ.get('OPENAI_API_KEY', '')
 OPENAI_MATERIAL_MODEL = os.environ.get('OPENAI_MATERIAL_MODEL', 'gpt-4.1-mini')
+AI_MATERIAL_ENABLED = os.environ.get('AI_MATERIAL_ENABLED', 'false').strip().lower() in {'1', 'true', 'yes', 'on'}
 AI_MATERIAL_ALLOWED_DOMAINS = [
     item.strip().lower()
     for item in os.environ.get('AI_MATERIAL_ALLOWED_DOMAINS', 'ferona.sk,profimetal.sk,mersteel.eu').split(',')

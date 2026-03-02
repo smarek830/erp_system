@@ -63,6 +63,10 @@ def _get_allowed_material_ai_domains():
     return ['ferona.sk', 'profimetal.sk', 'mersteel.eu']
 
 
+def _is_ai_material_enabled():
+    return bool(getattr(settings, 'AI_MATERIAL_ENABLED', False))
+
+
 def _is_allowed_material_ai_url(source_url):
     if not source_url:
         return True, ''
@@ -1982,6 +1986,7 @@ def sklad_materialu(request):
         'pod_minimom': pod_minimom,
         'posledne_prijemky': posledne_prijemky,
         'posledne_vydajky': posledne_vydajky,
+        'ai_material_enabled': _is_ai_material_enabled(),
         'ai_material_allowed_domains': _get_allowed_material_ai_domains(),
         'ai_material_navrhy': MaterialAINavrh.objects.select_related('created_by', 'material').all()[:5],
     }
@@ -1993,6 +1998,9 @@ def sklad_materialu(request):
 @login_required
 @permission_required("core.add_material", raise_exception=True)
 def ai_material_navrh(request):
+    if not _is_ai_material_enabled():
+        return _api_error('AI návrhy materiálu sú momentálne vypnuté.')
+
     payload = _get_json_body(request)
     if payload is None:
         return _api_error('Neplatný JSON payload.')
@@ -2054,6 +2062,9 @@ def ai_material_navrh(request):
 @login_required
 @permission_required("core.add_material", raise_exception=True)
 def ai_material_navrh_potvrdit(request, pk):
+    if not _is_ai_material_enabled():
+        return _api_error('AI návrhy materiálu sú momentálne vypnuté.')
+
     payload = _get_json_body(request)
     if payload is None:
         return _api_error('Neplatný JSON payload.')

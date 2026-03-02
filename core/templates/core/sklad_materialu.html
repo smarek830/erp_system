@@ -53,6 +53,7 @@
         </div>
     </div>
 
+    {% if ai_material_enabled %}
     <div class="card shadow-sm mb-4 border-info">
         <div class="card-header bg-info text-dark d-flex justify-content-between align-items-center">
             <h5 class="mb-0">🤖 AI návrh materiálu (OpenAI)</h5>
@@ -148,6 +149,7 @@
             </div>
         </div>
     </div>
+    {% endif %}
 
     <!-- Tabuľka materiálov -->
     <div class="card shadow-sm mb-4">
@@ -337,6 +339,7 @@
 {% endblock %}
 
 {% block extra_js %}
+{% if ai_material_enabled %}
 <script>
     (function () {
         const queryInput = document.getElementById('aiMaterialQuery');
@@ -472,4 +475,5 @@
         });
     })();
 </script>
+{% endif %}
 {% endblock %}
