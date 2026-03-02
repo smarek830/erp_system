@@ -26,8 +26,12 @@ from .pdf_generator import generate_sprievodka_pdf
 from datetime import datetime, timedelta, date
 from math import ceil
 from urllib.parse import urlparse
+import logging
 import openpyxl
 from openpyxl.styles import Font, PatternFill, Alignment
+
+
+logger = logging.getLogger(__name__)
 
 
 def _api_ok(message, **extra):
@@ -100,8 +104,9 @@ def _generate_material_ai_response(query, source_url=''):
     except Exception as exc:
         raise ValueError('Knižnica openai nie je nainštalovaná. Doplň ju do requirements.') from exc
 
-    model_name = getattr(settings, 'OPENAI_MATERIAL_MODEL', 'gpt-4.1-mini')
-    client = OpenAI(api_key=api_key)
+    model_name = str(getattr(settings, 'OPENAI_MATERIAL_MODEL', 'gpt-4.1-mini') or 'gpt-4.1-mini').strip()
+    timeout_seconds = float(getattr(settings, 'OPENAI_TIMEOUT_SECONDS', 20))
+    client = OpenAI(api_key=api_key, timeout=timeout_seconds, max_retries=0)
 
     source_hint = source_url.strip() if source_url else 'Bez konkrétnej URL, hľadaj na dôveryhodných slovenských weboch.'
     allowed_domains = ', '.join(_get_allowed_material_ai_domains())
@@ -130,10 +135,20 @@ def _generate_material_ai_response(query, source_url=''):
         '}'
     )
 
-    response = client.responses.create(
-        model=model_name,
-        input=prompt,
-    )
+    try:
+        response = client.responses.create(
+            model=model_name,
+            input=prompt,
+        )
+    except Exception as exc:
+        message = str(exc).lower()
+        if 'timed out' in message or 'timeout' in message:
+            raise ValueError('AI služba neodpovedala v časovom limite. Skontroluj internet na NASe a skús to znova.') from exc
+        if 'model' in message and ('not found' in message or 'does not exist' in message):
+            raise ValueError(f'AI model "{model_name}" nie je dostupný. Skontroluj OPENAI_MATERIAL_MODEL v .env.') from exc
+        if '429' in message or 'quota' in message or 'billing' in message:
+            raise ValueError('OpenAI účet nemá dostupný kredit/quota. Skontroluj billing na platform.openai.com.') from exc
+        raise
 
     raw_text = getattr(response, 'output_text', '') or ''
     parsed = _extract_first_json_object(raw_text)
@@ -1997,7 +2012,8 @@ def ai_material_navrh(request):
         ai_response = _generate_material_ai_response(query, source_url)
     except ValueError as exc:
         return _api_error(str(exc))
-    except Exception:
+    except Exception as exc:
+        logger.exception('AI material navrh failed')
         return _api_error('AI služba momentálne neodpovedá. Skús to znova o chvíľu.')
 
     ai_data = ai_response.get('data') or {}
