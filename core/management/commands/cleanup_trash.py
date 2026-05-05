@@ -69,7 +69,7 @@ class Command(BaseCommand):
 
             item_time = timezone.make_aware(
                 datetime.fromtimestamp(mtime),
-                timezone.get_current_timezone(),
+                timezone.get_default_timezone(),
             )
 
             if item_time <= cutoff:

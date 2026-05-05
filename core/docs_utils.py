@@ -159,10 +159,10 @@ def resolve_collision(target_path: Path) -> Path:
             return candidate
         counter += 1
 
-    # Fallback: append a short hash
+    # Fallback: append a short tag to avoid collision (not used for security)
     import hashlib
     import time
-    tag = hashlib.md5(str(time.time()).encode()).hexdigest()[:6]
+    tag = hashlib.md5(str(time.time()).encode()).hexdigest()[:6]  # noqa: S324
     return parent / f"{stem}_{tag}{suffix}"
 
 

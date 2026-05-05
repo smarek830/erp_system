@@ -2951,8 +2951,8 @@ def docs_download(request, pk):
     content_type, _ = mimetypes.guess_type(target.name)
     content_type = content_type or 'application/octet-stream'
 
-    def file_iterator(path, chunk_size=8192):
-        with open(path, 'rb') as f:
+    def file_iterator(file_path, chunk_size=8192):
+        with open(file_path, 'rb') as f:
             while True:
                 chunk_data = f.read(chunk_size)
                 if not chunk_data:
@@ -3025,7 +3025,7 @@ def docs_upload(request, pk):
                             src='', dest=rel_dest, size=dest_file.stat().st_size)
 
             results.append({'name': dest_file.name, 'status': 'ok'})
-        except Exception:
+        except OSError:
             if tmp_file.exists():
                 tmp_file.unlink(missing_ok=True)
             results.append({'name': original_name, 'status': 'error', 'message': 'Nahrávanie súboru zlyhalo.'})
