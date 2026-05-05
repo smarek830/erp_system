@@ -3,7 +3,7 @@ from datetime import date, timedelta
 import json
 from unittest.mock import patch
 
-from django.test import TestCase, Client
+from django.test import TestCase, Client, override_settings
 from django.contrib.auth.models import User
 from django.contrib.auth.models import Permission
 from django.urls import reverse
@@ -221,6 +221,7 @@ class KontrolnyParameterToleranciaTest(TestCase):
         self.assertFalse(self._meranie('9.899').je_v_tolerancii())
 
 
+@override_settings(AI_MATERIAL_ENABLED=True)
 class MaterialAiNavrhApiTest(TestCase):
     def setUp(self):
         self.client = Client()
@@ -944,7 +945,6 @@ import tempfile
 from pathlib import Path
 
 from django.contrib.auth.models import Group
-from django.test import override_settings
 
 from .docs_utils import (
     safe_resolve, is_extension_blocked, is_docs_admin,
