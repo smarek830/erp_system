@@ -153,3 +153,23 @@ AI_MATERIAL_ALLOWED_DOMAINS = [
     for item in os.environ.get('AI_MATERIAL_ALLOWED_DOMAINS', 'ferona.sk,profimetal.sk,mersteel.eu').split(',')
     if item.strip()
 ]
+
+# ---------------------------------------------------------------------------
+# ERP Documents module settings
+# ---------------------------------------------------------------------------
+# Root directory where product document folders are stored.
+# On Windows: C:\ERP_VAULT\docs   On Linux/dev: /opt/erp_vault/docs
+# Override via environment variable ERP_DOCS_ROOT.
+ERP_DOCS_ROOT = os.environ.get('ERP_DOCS_ROOT', r'C:\ERP_VAULT\docs')
+
+# Root directory for the recycle bin (deleted files/folders are moved here).
+ERP_TRASH_ROOT = os.environ.get('ERP_TRASH_ROOT', r'C:\ERP_VAULT\trash')
+
+# Temporary directory used for atomic uploads (write-then-move).
+ERP_TMP_ROOT = os.environ.get('ERP_TMP_ROOT', r'C:\ERP_VAULT\tmp')
+
+# Number of days to keep items in the trash before permanent deletion.
+ERP_TRASH_RETENTION_DAYS = int(os.environ.get('ERP_TRASH_RETENTION_DAYS', '30'))
+
+# Group name whose members have full docs admin rights (upload / delete / restore / set path).
+ERP_DOCS_ADMIN_GROUP = os.environ.get('ERP_DOCS_ADMIN_GROUP', 'docs_admin')

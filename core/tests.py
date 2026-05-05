@@ -933,3 +933,309 @@ class NaskladniHotoveDielAvoidDoubleCountTest(TestCase):
 
         sklad_after = SkladHotovychDielov.objects.get(pk=sklad.pk).mnozstvo
         self.assertEqual(sklad_after, sklad_before)
+
+
+# ---------------------------------------------------------------------------
+# ERP Documents module tests
+# ---------------------------------------------------------------------------
+
+import shutil
+import tempfile
+from pathlib import Path
+
+from django.contrib.auth.models import Group
+from django.test import override_settings
+
+from .docs_utils import (
+    safe_resolve, is_extension_blocked, is_docs_admin,
+    resolve_collision, safe_filename, to_rel,
+)
+from .models import DocumentAuditLog
+
+
+class DocsUtilsPathSafetyTest(TestCase):
+    """safe_resolve blocks path-traversal attempts."""
+
+    def setUp(self):
+        self.tmp = Path(tempfile.mkdtemp())
+        (self.tmp / 'sub').mkdir()
+
+    def tearDown(self):
+        shutil.rmtree(self.tmp, ignore_errors=True)
+
+    def test_valid_subpath(self):
+        result = safe_resolve('sub', self.tmp)
+        self.assertEqual(result, (self.tmp / 'sub').resolve())
+
+    def test_empty_path_returns_root(self):
+        result = safe_resolve('', self.tmp)
+        self.assertEqual(result, self.tmp.resolve())
+
+    def test_dotdot_blocked(self):
+        with self.assertRaises(ValueError):
+            safe_resolve('../etc/passwd', self.tmp)
+
+    def test_absolute_path_blocked(self):
+        with self.assertRaises(ValueError):
+            safe_resolve('/etc/passwd', self.tmp)
+
+    def test_encoded_traversal_blocked(self):
+        # Even if normalised forward slashes can still carry ..
+        with self.assertRaises(ValueError):
+            safe_resolve('sub/../../etc/passwd', self.tmp)
+
+    def test_nested_valid_path(self):
+        (self.tmp / 'a' / 'b').mkdir(parents=True)
+        result = safe_resolve('a/b', self.tmp)
+        self.assertEqual(result, (self.tmp / 'a' / 'b').resolve())
+
+
+class DocsExtensionBlockTest(TestCase):
+    def test_exe_blocked(self):
+        self.assertTrue(is_extension_blocked('virus.exe'))
+
+    def test_bat_blocked(self):
+        self.assertTrue(is_extension_blocked('run.bat'))
+
+    def test_ps1_blocked(self):
+        self.assertTrue(is_extension_blocked('script.PS1'))
+
+    def test_pdf_allowed(self):
+        self.assertFalse(is_extension_blocked('drawing.pdf'))
+
+    def test_dwg_allowed(self):
+        self.assertFalse(is_extension_blocked('part.DWG'))
+
+    def test_xlsx_allowed(self):
+        self.assertFalse(is_extension_blocked('bom.xlsx'))
+
+
+class DocsIsAdminTest(TestCase):
+    def setUp(self):
+        self.group = Group.objects.create(name='docs_admin')
+        self.admin_user = User.objects.create_user('docs_admin_user', password='x')
+        self.admin_user.groups.add(self.group)
+        self.regular_user = User.objects.create_user('regular_user', password='x')
+        self.superuser = User.objects.create_superuser('superuser', password='x')
+
+    @override_settings(ERP_DOCS_ADMIN_GROUP='docs_admin')
+    def test_group_member_is_admin(self):
+        self.assertTrue(is_docs_admin(self.admin_user))
+
+    @override_settings(ERP_DOCS_ADMIN_GROUP='docs_admin')
+    def test_regular_user_not_admin(self):
+        self.assertFalse(is_docs_admin(self.regular_user))
+
+    def test_superuser_is_admin(self):
+        self.assertTrue(is_docs_admin(self.superuser))
+
+    def test_anonymous_not_admin(self):
+        from django.contrib.auth.models import AnonymousUser
+        self.assertFalse(is_docs_admin(AnonymousUser()))
+
+
+class DocsResolveCollisionTest(TestCase):
+    def setUp(self):
+        self.tmp = Path(tempfile.mkdtemp())
+
+    def tearDown(self):
+        shutil.rmtree(self.tmp, ignore_errors=True)
+
+    def test_no_collision(self):
+        path = self.tmp / 'file.pdf'
+        result = resolve_collision(path)
+        self.assertEqual(result, path)
+
+    def test_collision_appends_number(self):
+        path = self.tmp / 'file.pdf'
+        path.touch()  # create it so collision happens
+        result = resolve_collision(path)
+        self.assertEqual(result, self.tmp / 'file (2).pdf')
+
+    def test_multiple_collisions(self):
+        base = self.tmp / 'file.pdf'
+        base.touch()
+        (self.tmp / 'file (2).pdf').touch()
+        result = resolve_collision(base)
+        self.assertEqual(result, self.tmp / 'file (3).pdf')
+
+
+class DocsSafeFilenameTest(TestCase):
+    def test_strips_path_separators(self):
+        result = safe_filename('../etc/passwd')
+        self.assertNotIn('/', result)
+        self.assertNotIn('\\', result)
+
+    def test_strips_leading_dots(self):
+        result = safe_filename('.hidden')
+        self.assertFalse(result.startswith('.'))
+
+    def test_normal_name_unchanged(self):
+        self.assertEqual(safe_filename('drawing.pdf'), 'drawing.pdf')
+
+
+class DocsApiPermissionTest(TestCase):
+    """API endpoints respect permission rules."""
+
+    def setUp(self):
+        self.tmp_docs = Path(tempfile.mkdtemp())
+        self.tmp_trash = Path(tempfile.mkdtemp())
+        self.tmp_tmp = Path(tempfile.mkdtemp())
+
+        self.group = Group.objects.create(name='docs_admin')
+        self.admin = User.objects.create_user('admin_doc', password='x')
+        self.admin.groups.add(self.group)
+        self.viewer = User.objects.create_user('viewer_doc', password='x')
+        # Give viewer permission to view products
+        from django.contrib.auth.models import Permission
+        perm = Permission.objects.get(codename='view_produkt')
+        self.viewer.user_permissions.add(perm)
+        self.admin.user_permissions.add(perm)
+
+        self.produkt = Produkt.objects.create(
+            cislo_dielu='DOC-TEST-001',
+            nazov='Doc test product',
+            documents_path='',
+        )
+
+    def tearDown(self):
+        shutil.rmtree(self.tmp_docs, ignore_errors=True)
+        shutil.rmtree(self.tmp_trash, ignore_errors=True)
+        shutil.rmtree(self.tmp_tmp, ignore_errors=True)
+
+    def _settings(self):
+        return override_settings(
+            ERP_DOCS_ROOT=str(self.tmp_docs),
+            ERP_TRASH_ROOT=str(self.tmp_trash),
+            ERP_TMP_ROOT=str(self.tmp_tmp),
+            ERP_DOCS_ADMIN_GROUP='docs_admin',
+        )
+
+    def test_set_path_requires_admin(self):
+        with self._settings():
+            self.client.login(username='viewer_doc', password='x')
+            resp = self.client.post(
+                f'/api/docs/{self.produkt.pk}/set-path/',
+                data=json.dumps({'path': ''}),
+                content_type='application/json',
+            )
+            self.assertEqual(resp.status_code, 403)
+
+    def test_set_path_admin_ok(self):
+        (self.tmp_docs / 'folder1').mkdir()
+        with self._settings():
+            self.client.login(username='admin_doc', password='x')
+            resp = self.client.post(
+                f'/api/docs/{self.produkt.pk}/set-path/',
+                data=json.dumps({'path': 'folder1'}),
+                content_type='application/json',
+            )
+            self.assertEqual(resp.status_code, 200)
+            data = json.loads(resp.content)
+            self.assertEqual(data['status'], 'ok')
+            self.produkt.refresh_from_db()
+            self.assertEqual(self.produkt.documents_path, 'folder1')
+
+    def test_upload_requires_admin(self):
+        with self._settings():
+            self.client.login(username='viewer_doc', password='x')
+            resp = self.client.post(
+                f'/api/docs/{self.produkt.pk}/upload/',
+                data={'files': SimpleUploadedFile('test.pdf', b'data')},
+            )
+            self.assertEqual(resp.status_code, 403)
+
+    def test_delete_requires_admin(self):
+        with self._settings():
+            self.client.login(username='viewer_doc', password='x')
+            resp = self.client.post(
+                f'/api/docs/{self.produkt.pk}/delete/',
+                data=json.dumps({'subpath': 'somefile.pdf'}),
+                content_type='application/json',
+            )
+            self.assertEqual(resp.status_code, 403)
+
+    def test_tree_requires_login(self):
+        with self._settings():
+            resp = self.client.get('/api/docs/tree/')
+            # Should redirect to login
+            self.assertIn(resp.status_code, [302, 403])
+
+
+class DocsMoveToTrashTest(TestCase):
+    """Delete endpoint moves files to trash."""
+
+    def setUp(self):
+        self.tmp_docs = Path(tempfile.mkdtemp())
+        self.tmp_trash = Path(tempfile.mkdtemp())
+        self.tmp_tmp = Path(tempfile.mkdtemp())
+
+        self.group = Group.objects.create(name='docs_admin_trash')
+        self.admin = User.objects.create_user('admin_trash', password='x')
+        self.admin.groups.add(self.group)
+        # Permission to view products
+        perm = Permission.objects.get(codename='view_produkt')
+        self.admin.user_permissions.add(perm)
+
+        # Create a file to delete
+        self.folder = self.tmp_docs / 'myproduct'
+        self.folder.mkdir()
+        self.test_file = self.folder / 'drawing.pdf'
+        self.test_file.write_bytes(b'PDF content')
+
+        self.produkt = Produkt.objects.create(
+            cislo_dielu='TRASH-TEST-001',
+            nazov='Trash test product',
+            documents_path='myproduct',
+        )
+
+    def tearDown(self):
+        shutil.rmtree(self.tmp_docs, ignore_errors=True)
+        shutil.rmtree(self.tmp_trash, ignore_errors=True)
+        shutil.rmtree(self.tmp_tmp, ignore_errors=True)
+
+    def _settings(self):
+        return override_settings(
+            ERP_DOCS_ROOT=str(self.tmp_docs),
+            ERP_TRASH_ROOT=str(self.tmp_trash),
+            ERP_TMP_ROOT=str(self.tmp_tmp),
+            ERP_DOCS_ADMIN_GROUP='docs_admin_trash',
+        )
+
+    def test_delete_moves_to_trash(self):
+        with self._settings():
+            self.client.login(username='admin_trash', password='x')
+            resp = self.client.post(
+                f'/api/docs/{self.produkt.pk}/delete/',
+                data=json.dumps({'subpath': 'drawing.pdf'}),
+                content_type='application/json',
+            )
+            self.assertEqual(resp.status_code, 200)
+            data = json.loads(resp.content)
+            self.assertEqual(data['status'], 'ok')
+
+            # File should be gone from docs
+            self.assertFalse(self.test_file.exists())
+
+            # File should be in trash
+            trash_files = list(self.tmp_trash.rglob('drawing.pdf'))
+            self.assertEqual(len(trash_files), 1)
+
+            # Audit log should have entry
+            self.assertEqual(
+                DocumentAuditLog.objects.filter(
+                    action=DocumentAuditLog.ACTION_DELETE
+                ).count(),
+                1,
+            )
+
+    def test_path_traversal_in_delete_blocked(self):
+        with self._settings():
+            self.client.login(username='admin_trash', password='x')
+            resp = self.client.post(
+                f'/api/docs/{self.produkt.pk}/delete/',
+                data=json.dumps({'subpath': '../../etc/passwd'}),
+                content_type='application/json',
+            )
+            # Should return 400 Bad Request
+            self.assertEqual(resp.status_code, 400)
