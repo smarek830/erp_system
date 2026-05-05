@@ -473,11 +473,11 @@ def zoznam_produktov(request):
 @login_required
 @permission_required("core.view_produkt", raise_exception=True)
 def detail_produkt(request, pk):
-    from .docs_utils import is_docs_admin as _is_docs_admin
+    from .docs_utils import is_docs_admin
     produkt = get_object_or_404(Produkt, pk=pk)
     return render(request, "core/detail.html", {
         "produkt": produkt,
-        "user_is_docs_admin": _is_docs_admin(request.user),
+        "user_is_docs_admin": is_docs_admin(request.user),
     })
 
 @login_required
@@ -2783,8 +2783,8 @@ def docs_tree(request):
 
     try:
         target = safe_resolve(rel_path, root)
-    except ValueError as exc:
-        return JsonResponse({'status': 'error', 'message': str(exc)}, status=400)
+    except ValueError:
+        return JsonResponse({'status': 'error', 'message': 'Neplatná cesta (zakázaný prístup).'}, status=400)
 
     if not target.is_dir():
         return JsonResponse({'status': 'error', 'message': 'Nie je priečinok.'}, status=400)
@@ -2829,8 +2829,8 @@ def docs_set_path(request, pk):
         # Validate the path exists and is within root
         try:
             target = safe_resolve(rel_path, root)
-        except ValueError as exc:
-            return JsonResponse({'status': 'error', 'message': str(exc)}, status=400)
+        except ValueError:
+            return JsonResponse({'status': 'error', 'message': 'Neplatná cesta (zakázaný prístup).'}, status=400)
         if not target.is_dir():
             return JsonResponse({'status': 'error', 'message': 'Zvolená cesta nie je priečinok.'}, status=400)
         # Store normalised (forward-slash) relative path
@@ -2865,8 +2865,8 @@ def docs_list(request, pk):
     # Resolve product base folder
     try:
         base = safe_resolve(produkt.documents_path, root)
-    except ValueError as exc:
-        return JsonResponse({'status': 'error', 'message': str(exc)}, status=400)
+    except ValueError:
+        return JsonResponse({'status': 'error', 'message': 'Neplatná uložená cesta dokumentov.'}, status=400)
 
     # Optional sub-navigation inside the product folder
     subpath = request.GET.get('subpath', '')
@@ -2874,8 +2874,8 @@ def docs_list(request, pk):
         target = safe_resolve(subpath, base) if subpath else base
         # Double-check target is still under root (belt-and-suspenders)
         safe_resolve(to_rel(target, root), root)
-    except ValueError as exc:
-        return JsonResponse({'status': 'error', 'message': str(exc)}, status=400)
+    except ValueError:
+        return JsonResponse({'status': 'error', 'message': 'Neplatná cesta (zakázaný prístup).'}, status=400)
 
     if not target.is_dir():
         return JsonResponse({'status': 'error', 'message': 'Priečinok neexistuje.'}, status=404)
@@ -2893,7 +2893,9 @@ def docs_list(request, pk):
                     'name': entry.name,
                     'subpath': rel_from_base,
                     'size': stat.st_size,
-                    'modified': datetime.fromtimestamp(stat.st_mtime).strftime('%d.%m.%Y %H:%M'),
+                    'modified': timezone.make_aware(
+                        datetime.fromtimestamp(stat.st_mtime)
+                    ).strftime('%d.%m.%Y %H:%M'),
                 })
     except PermissionError:
         return JsonResponse({'status': 'error', 'message': 'Nemáte prístup k priečinku.'}, status=403)
@@ -2940,8 +2942,8 @@ def docs_download(request, pk):
         base = safe_resolve(produkt.documents_path, root)
         target = safe_resolve(subpath, base)
         safe_resolve(to_rel(target, root), root)  # belt-and-suspenders
-    except ValueError as exc:
-        return HttpResponse(str(exc), status=400)
+    except ValueError:
+        return HttpResponse('Neplatná cesta (zakázaný prístup).', status=400)
 
     if not target.is_file():
         return HttpResponse('Súbor neexistuje.', status=404)
@@ -2949,10 +2951,10 @@ def docs_download(request, pk):
     content_type, _ = mimetypes.guess_type(target.name)
     content_type = content_type or 'application/octet-stream'
 
-    def file_iterator(path, chunk=8192):
+    def file_iterator(path, chunk_size=8192):
         with open(path, 'rb') as f:
             while True:
-                chunk_data = f.read(chunk)
+                chunk_data = f.read(chunk_size)
                 if not chunk_data:
                     break
                 yield chunk_data
@@ -2988,8 +2990,8 @@ def docs_upload(request, pk):
         base = safe_resolve(produkt.documents_path, root)
         target_dir = safe_resolve(subpath, base) if subpath else base
         safe_resolve(to_rel(target_dir, root), root)
-    except ValueError as exc:
-        return JsonResponse({'status': 'error', 'message': str(exc)}, status=400)
+    except ValueError:
+        return JsonResponse({'status': 'error', 'message': 'Neplatná cesta (zakázaný prístup).'}, status=400)
 
     uploaded_files = request.FILES.getlist('files')
     if not uploaded_files:
@@ -3023,10 +3025,10 @@ def docs_upload(request, pk):
                             src='', dest=rel_dest, size=dest_file.stat().st_size)
 
             results.append({'name': dest_file.name, 'status': 'ok'})
-        except Exception as exc:
+        except Exception:
             if tmp_file.exists():
                 tmp_file.unlink(missing_ok=True)
-            results.append({'name': original_name, 'status': 'error', 'message': str(exc)})
+            results.append({'name': original_name, 'status': 'error', 'message': 'Nahrávanie súboru zlyhalo.'})
 
     all_ok = all(r['status'] == 'ok' for r in results)
     return JsonResponse({
@@ -3068,8 +3070,8 @@ def docs_delete(request, pk):
         base = safe_resolve(produkt.documents_path, root)
         target = safe_resolve(subpath, base)
         safe_resolve(to_rel(target, root), root)
-    except ValueError as exc:
-        return JsonResponse({'status': 'error', 'message': str(exc)}, status=400)
+    except ValueError:
+        return JsonResponse({'status': 'error', 'message': 'Neplatná cesta (zakázaný prístup).'}, status=400)
 
     if not target.exists():
         return JsonResponse({'status': 'error', 'message': 'Súbor/priečinok neexistuje.'}, status=404)
@@ -3164,8 +3166,8 @@ def docs_trash_restore(request):
     # Resolve trash source
     try:
         trash_src = safe_resolve(log_entry.dest_rel_path, t_root)
-    except ValueError as exc:
-        return JsonResponse({'status': 'error', 'message': str(exc)}, status=400)
+    except ValueError:
+        return JsonResponse({'status': 'error', 'message': 'Neplatná cesta v koši.'}, status=400)
 
     if not trash_src.exists():
         return JsonResponse({'status': 'error', 'message': 'Súbor v koši neexistuje (možno bol vymazaný).'}, status=404)
@@ -3173,8 +3175,8 @@ def docs_trash_restore(request):
     # Resolve restore destination
     try:
         restore_dest = safe_resolve(log_entry.src_rel_path, root)
-    except ValueError as exc:
-        return JsonResponse({'status': 'error', 'message': str(exc)}, status=400)
+    except ValueError:
+        return JsonResponse({'status': 'error', 'message': 'Neplatná pôvodná cesta pre obnovenie.'}, status=400)
 
     restore_dest.parent.mkdir(parents=True, exist_ok=True)
     restore_dest = resolve_collision(restore_dest)

@@ -551,7 +551,6 @@
             // Select on label click
             label.addEventListener('click', e => {
                 e.stopPropagation();
-                ulEl.closest('#folder-tree-root') || document.getElementById('folder-tree-root');
                 // Deselect all
                 document.querySelectorAll('.tree-row.active-tree-node').forEach(r => r.classList.remove('active-tree-node', 'bg-primary', 'text-white'));
                 row.classList.add('active-tree-node', 'bg-primary', 'text-white');

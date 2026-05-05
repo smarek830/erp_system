@@ -11,7 +11,7 @@ Usage:
 """
 
 import shutil
-from datetime import timedelta
+from datetime import datetime, timedelta
 from pathlib import Path
 
 from django.core.management.base import BaseCommand
@@ -67,8 +67,10 @@ class Command(BaseCommand):
             except OSError:
                 continue
 
-            from datetime import datetime
-            item_time = timezone.make_aware(datetime.fromtimestamp(mtime), timezone.get_current_timezone())
+            item_time = timezone.make_aware(
+                datetime.fromtimestamp(mtime),
+                timezone.get_current_timezone(),
+            )
 
             if item_time <= cutoff:
                 self.stdout.write(f"  {'[DRY] ' if dry_run else ''}Deleting: {prefix_dir.name}  (age: {(timezone.now() - item_time).days} days)")
