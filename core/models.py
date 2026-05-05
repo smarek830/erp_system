@@ -145,6 +145,16 @@ class Produkt(models.Model):
     vykres_pdf = models.FileField(upload_to='vykresy/', blank=True, null=True, verbose_name="Výkres (PDF)")
     baliaci_predpis_pdf = models.FileField(upload_to='baliace_predpisy/', null=True, blank=True, verbose_name="Baliaci predpis (PDF)")
 
+    # Relative path (forward slashes) from ERP_DOCS_ROOT pointing to this product's document folder.
+    # Example: "AA Hengstler 2026/Database/006 - 3532011922"
+    documents_path = models.CharField(
+        max_length=500,
+        blank=True,
+        default='',
+        verbose_name="Cesta k dokumentom",
+        help_text="Relatívna cesta od ERP_DOCS_ROOT (napr. 'AA Hengstler 2026/Database/006 - 3532011922')",
+    )
+
     def __str__(self):
         return f"{self.nazov} (Index: {self.index if self.index else '-'})"
 
@@ -1208,3 +1218,50 @@ class Sprievodka(models.Model):
     class Meta:
         verbose_name = "Sprievodka"
         verbose_name_plural = "Sprievodky"
+
+
+# 15. MODEL: AUDIT LOG DOKUMENTOV
+class DocumentAuditLog(models.Model):
+    ACTION_UPLOAD = 'upload'
+    ACTION_DELETE = 'delete_to_trash'
+    ACTION_RESTORE = 'restore'
+    ACTION_CLEANUP = 'cleanup'
+    ACTION_SET_PATH = 'set_path'
+
+    ACTION_CHOICES = [
+        (ACTION_UPLOAD, 'Nahratie súboru'),
+        (ACTION_DELETE, 'Presun do koša'),
+        (ACTION_RESTORE, 'Obnovenie z koša'),
+        (ACTION_CLEANUP, 'Automatické vymazanie z koša'),
+        (ACTION_SET_PATH, 'Nastavenie cesty dokumentov'),
+    ]
+
+    user = models.ForeignKey(
+        User,
+        on_delete=models.SET_NULL,
+        null=True,
+        blank=True,
+        related_name='document_audit_logs',
+        verbose_name="Používateľ",
+    )
+    timestamp = models.DateTimeField(auto_now_add=True, verbose_name="Čas")
+    produkt = models.ForeignKey(
+        Produkt,
+        on_delete=models.SET_NULL,
+        null=True,
+        blank=True,
+        related_name='document_audit_logs',
+        verbose_name="Produkt",
+    )
+    action = models.CharField(max_length=20, choices=ACTION_CHOICES, verbose_name="Akcia")
+    src_rel_path = models.CharField(max_length=1000, blank=True, verbose_name="Zdrojová cesta")
+    dest_rel_path = models.CharField(max_length=1000, blank=True, verbose_name="Cieľová cesta")
+    file_size = models.BigIntegerField(null=True, blank=True, verbose_name="Veľkosť (B)")
+
+    def __str__(self):
+        return f"{self.get_action_display()} | {self.user} | {self.src_rel_path} | {self.timestamp:%Y-%m-%d %H:%M}"
+
+    class Meta:
+        verbose_name = "Audit log dokumentov"
+        verbose_name_plural = "Audit logy dokumentov"
+        ordering = ['-timestamp']

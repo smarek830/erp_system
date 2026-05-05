@@ -61,4 +61,14 @@ urlpatterns = [
     path('sklad/vydajka/nova/', views.nova_vydajka, name='nova_vydajka'),
     path('sklad/material/prijemka/nova/', views.nova_prijemka_materialu, name='nova_prijemka_materialu'),
     path('sklad/material/vydajka/nova/', views.nova_vydajka_materialu, name='nova_vydajka_materialu'),
+
+    # Documents module
+    path('api/docs/tree/', views.docs_tree, name='docs_tree'),
+    path('api/docs/<int:pk>/set-path/', views.docs_set_path, name='docs_set_path'),
+    path('api/docs/<int:pk>/list/', views.docs_list, name='docs_list'),
+    path('api/docs/<int:pk>/download/', views.docs_download, name='docs_download'),
+    path('api/docs/<int:pk>/upload/', views.docs_upload, name='docs_upload'),
+    path('api/docs/<int:pk>/delete/', views.docs_delete, name='docs_delete'),
+    path('api/docs/trash/', views.docs_trash_list, name='docs_trash_list'),
+    path('api/docs/trash/restore/', views.docs_trash_restore, name='docs_trash_restore'),
 ]

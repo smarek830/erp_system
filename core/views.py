@@ -11,9 +11,10 @@ from .models import (
     SkladHotovychDielov, PrijemkaHotovychDielov, VydajkaHotovychDielov,
     PrijemkaNaSklad, VydajkaZoSkladu, OperaciaVyroby, OperatorNaOperacii,
     KontrolnyParameter, MeraniePriKontrole, MaterialAINavrh,
+    DocumentAuditLog,
 )
 from decimal import Decimal, InvalidOperation
-from django.http import JsonResponse, HttpResponse
+from django.http import JsonResponse, HttpResponse, StreamingHttpResponse
 from django.views.decorators.http import require_POST
 from django.utils import timezone
 from django.template.loader import render_to_string
@@ -472,8 +473,12 @@ def zoznam_produktov(request):
 @login_required
 @permission_required("core.view_produkt", raise_exception=True)
 def detail_produkt(request, pk):
+    from .docs_utils import is_docs_admin
     produkt = get_object_or_404(Produkt, pk=pk)
-    return render(request, "core/detail.html", {"produkt": produkt})
+    return render(request, "core/detail.html", {
+        "produkt": produkt,
+        "user_is_docs_admin": is_docs_admin(request.user),
+    })
 
 @login_required
 @permission_required("core.view_objednavka", raise_exception=True)
@@ -2725,3 +2730,470 @@ def nova_vydajka_materialu(request):
     }
 
     return render(request, 'core/form_universal.html', context)
+
+
+# =============================================================================
+# ERP DOCUMENTS MODULE
+# =============================================================================
+
+import os
+import shutil
+import mimetypes
+from pathlib import Path
+
+from .docs_utils import (
+    docs_root, trash_root, tmp_root,
+    safe_resolve, to_rel, is_extension_blocked,
+    is_docs_admin, resolve_collision, safe_filename,
+)
+
+
+def _docs_require_admin(user):
+    """Return JsonResponse 403 or None."""
+    if not is_docs_admin(user):
+        return JsonResponse({'status': 'error', 'message': 'Nemáte oprávnenie (docs_admin).'}, status=403)
+    return None
+
+
+# Max number of trash entries returned by the trash list endpoint
+TRASH_LIST_LIMIT = 200
+
+
+def _log_doc_action(user, produkt, action, src='', dest='', size=None):
+    DocumentAuditLog.objects.create(
+        user=user,
+        produkt=produkt,
+        action=action,
+        src_rel_path=src,
+        dest_rel_path=dest,
+        file_size=size,
+    )
+
+
+# ─── Folder picker tree ─────────────────────────────────────────────────────
+
+@login_required
+def docs_tree(request):
+    """Return JSON list of child folders for lazy folder-picker tree.
+
+    GET /api/docs/tree/?path=<rel_path>
+    rel_path is relative to ERP_DOCS_ROOT; empty = list root children.
+    """
+    rel_path = request.GET.get('path', '')
+    root = docs_root()
+
+    if not root.is_dir():
+        return JsonResponse({'status': 'error', 'message': f'ERP_DOCS_ROOT neexistuje: {root}'}, status=500)
+
+    try:
+        target = safe_resolve(rel_path, root)
+    except ValueError:
+        return JsonResponse({'status': 'error', 'message': 'Neplatná cesta (zakázaný prístup).'}, status=400)
+
+    if not target.is_dir():
+        return JsonResponse({'status': 'error', 'message': 'Nie je priečinok.'}, status=400)
+
+    children = []
+    try:
+        for entry in sorted(target.iterdir(), key=lambda e: e.name.lower()):
+            if entry.is_dir():
+                has_children = any(e.is_dir() for e in entry.iterdir())
+                children.append({
+                    'name': entry.name,
+                    'path': to_rel(entry, root),
+                    'has_children': has_children,
+                })
+    except PermissionError:
+        return JsonResponse({'status': 'error', 'message': 'Nemáte prístup k priečinku.'}, status=403)
+
+    return JsonResponse({'status': 'ok', 'path': to_rel(target, root) if target != root else '', 'children': children})
+
+
+# ─── Set documents_path on product ──────────────────────────────────────────
+
+@login_required
+@require_POST
+def docs_set_path(request, pk):
+    """POST /api/docs/<pk>/set-path/ — save documents_path for a product."""
+    err = _docs_require_admin(request.user)
+    if err:
+        return err
+
+    produkt = get_object_or_404(Produkt, pk=pk)
+    root = docs_root()
+
+    try:
+        data = json.loads(request.body)
+    except (json.JSONDecodeError, AttributeError):
+        return JsonResponse({'status': 'error', 'message': 'Neplatný JSON.'}, status=400)
+
+    rel_path = data.get('path', '').strip()
+
+    if rel_path:
+        # Validate the path exists and is within root
+        try:
+            target = safe_resolve(rel_path, root)
+        except ValueError:
+            return JsonResponse({'status': 'error', 'message': 'Neplatná cesta (zakázaný prístup).'}, status=400)
+        if not target.is_dir():
+            return JsonResponse({'status': 'error', 'message': 'Zvolená cesta nie je priečinok.'}, status=400)
+        # Store normalised (forward-slash) relative path
+        stored = to_rel(target, root)
+    else:
+        stored = ''
+
+    old_path = produkt.documents_path
+    produkt.documents_path = stored
+    produkt.save(update_fields=['documents_path'])
+
+    _log_doc_action(request.user, produkt, DocumentAuditLog.ACTION_SET_PATH,
+                    src=old_path, dest=stored)
+
+    return JsonResponse({'status': 'ok', 'message': 'Cesta k dokumentom bola uložená.', 'path': stored})
+
+
+# ─── Browse documents ────────────────────────────────────────────────────────
+
+@login_required
+def docs_list(request, pk):
+    """Return folder listing for a product's documents directory.
+
+    GET /api/docs/<pk>/list/?subpath=<rel_within_product_folder>
+    """
+    produkt = get_object_or_404(Produkt, pk=pk)
+    root = docs_root()
+
+    if not produkt.documents_path:
+        return JsonResponse({'status': 'error', 'message': 'Produkt nemá nastavenú cestu k dokumentom.'}, status=400)
+
+    # Resolve product base folder
+    try:
+        base = safe_resolve(produkt.documents_path, root)
+    except ValueError:
+        return JsonResponse({'status': 'error', 'message': 'Neplatná uložená cesta dokumentov.'}, status=400)
+
+    # Optional sub-navigation inside the product folder
+    subpath = request.GET.get('subpath', '')
+    try:
+        target = safe_resolve(subpath, base) if subpath else base
+        # Double-check target is still under root (belt-and-suspenders)
+        safe_resolve(to_rel(target, root), root)
+    except ValueError:
+        return JsonResponse({'status': 'error', 'message': 'Neplatná cesta (zakázaný prístup).'}, status=400)
+
+    if not target.is_dir():
+        return JsonResponse({'status': 'error', 'message': 'Priečinok neexistuje.'}, status=404)
+
+    folders = []
+    files = []
+    try:
+        raw_entries = list(target.iterdir())
+        raw_entries.sort(key=lambda e: e.name.lower())
+        for entry in raw_entries:
+            rel_from_base = to_rel(entry, base)
+            if entry.is_dir():
+                folders.append({'name': entry.name, 'subpath': rel_from_base})
+            else:
+                stat = entry.stat()
+                mtime = datetime.fromtimestamp(stat.st_mtime, tz=timezone.utc)
+                files.append({
+                    'name': entry.name,
+                    'subpath': rel_from_base,
+                    'size': stat.st_size,
+                    'modified': mtime.astimezone(timezone.get_default_timezone()).strftime('%d.%m.%Y %H:%M'),
+                })
+    except PermissionError:
+        return JsonResponse({'status': 'error', 'message': 'Nemáte prístup k priečinku.'}, status=403)
+
+    # Build breadcrumb: list of {name, subpath} from base to current
+    breadcrumb = []
+    if subpath:
+        parts = Path(subpath.replace('\\', '/')).parts
+        accumulated = ''
+        for part in parts:
+            accumulated = f'{accumulated}/{part}'.lstrip('/')
+            breadcrumb.append({'name': part, 'subpath': accumulated})
+
+    return JsonResponse({
+        'status': 'ok',
+        'base_path': produkt.documents_path,
+        'subpath': subpath,
+        'breadcrumb': breadcrumb,
+        'folders': folders,
+        'files': files,
+        'is_docs_admin': is_docs_admin(request.user),
+    })
+
+
+# ─── Download file ───────────────────────────────────────────────────────────
+
+@login_required
+def docs_download(request, pk):
+    """Stream a file download.
+
+    GET /api/docs/<pk>/download/?subpath=<path_within_product_folder>
+    """
+    produkt = get_object_or_404(Produkt, pk=pk)
+    root = docs_root()
+
+    if not produkt.documents_path:
+        return HttpResponse('Produkt nemá nastavenú cestu k dokumentom.', status=400)
+
+    subpath = request.GET.get('subpath', '')
+    if not subpath:
+        return HttpResponse('Chýba subpath.', status=400)
+
+    try:
+        base = safe_resolve(produkt.documents_path, root)
+        target = safe_resolve(subpath, base)
+        safe_resolve(to_rel(target, root), root)  # belt-and-suspenders
+    except ValueError:
+        return HttpResponse('Neplatná cesta (zakázaný prístup).', status=400)
+
+    if not target.is_file():
+        return HttpResponse('Súbor neexistuje.', status=404)
+
+    content_type, _ = mimetypes.guess_type(target.name)
+    content_type = content_type or 'application/octet-stream'
+
+    def file_iterator(file_path, chunk_size=8192):
+        with open(file_path, 'rb') as f:
+            while True:
+                chunk_data = f.read(chunk_size)
+                if not chunk_data:
+                    break
+                yield chunk_data
+
+    response = StreamingHttpResponse(file_iterator(target), content_type=content_type)
+    from urllib.parse import quote
+    encoded_name = quote(target.name, safe='')
+    response['Content-Disposition'] = (
+        f"attachment; filename=\"{target.name}\"; filename*=UTF-8''{encoded_name}"
+    )
+    response['Content-Length'] = target.stat().st_size
+    return response
+
+
+# ─── Upload files ────────────────────────────────────────────────────────────
+
+@login_required
+@require_POST
+def docs_upload(request, pk):
+    """Multi-file upload into a product documents subfolder.
+
+    POST /api/docs/<pk>/upload/?subpath=<path_within_product_folder>
+    Body: multipart/form-data with files[] field.
+    """
+    err = _docs_require_admin(request.user)
+    if err:
+        return err
+
+    produkt = get_object_or_404(Produkt, pk=pk)
+    root = docs_root()
+
+    if not produkt.documents_path:
+        return JsonResponse({'status': 'error', 'message': 'Produkt nemá nastavenú cestu k dokumentom.'}, status=400)
+
+    subpath = request.GET.get('subpath', '')
+    try:
+        base = safe_resolve(produkt.documents_path, root)
+        target_dir = safe_resolve(subpath, base) if subpath else base
+        safe_resolve(to_rel(target_dir, root), root)
+    except ValueError:
+        return JsonResponse({'status': 'error', 'message': 'Neplatná cesta (zakázaný prístup).'}, status=400)
+
+    uploaded_files = request.FILES.getlist('files')
+    if not uploaded_files:
+        return JsonResponse({'status': 'error', 'message': 'Žiadne súbory neboli nahrané.'}, status=400)
+
+    tmp = tmp_root()
+    tmp.mkdir(parents=True, exist_ok=True)
+    target_dir.mkdir(parents=True, exist_ok=True)
+
+    results = []
+    for f in uploaded_files:
+        original_name = safe_filename(f.name)
+
+        if is_extension_blocked(original_name):
+            results.append({'name': original_name, 'status': 'error', 'message': 'Zakázaná prípona súboru.'})
+            continue
+
+        # Write to tmp atomically
+        tmp_file = resolve_collision(tmp / original_name)
+        try:
+            with open(tmp_file, 'wb') as out:
+                for chunk in f.chunks():
+                    out.write(chunk)
+
+            # Move to destination
+            dest_file = resolve_collision(target_dir / original_name)
+            shutil.move(str(tmp_file), str(dest_file))
+
+            rel_dest = to_rel(dest_file, root)
+            _log_doc_action(request.user, produkt, DocumentAuditLog.ACTION_UPLOAD,
+                            src='', dest=rel_dest, size=dest_file.stat().st_size)
+
+            results.append({'name': dest_file.name, 'status': 'ok'})
+        except OSError:
+            if tmp_file.exists():
+                tmp_file.unlink(missing_ok=True)
+            results.append({'name': original_name, 'status': 'error', 'message': 'Nahrávanie súboru zlyhalo.'})
+
+    all_ok = all(r['status'] == 'ok' for r in results)
+    return JsonResponse({
+        'status': 'ok' if all_ok else 'partial',
+        'results': results,
+    })
+
+
+# ─── Delete (move to trash) ───────────────────────────────────────────────────
+
+@login_required
+@require_POST
+def docs_delete(request, pk):
+    """Move a file or folder to trash.
+
+    POST /api/docs/<pk>/delete/
+    Body JSON: {"subpath": "<path_within_product_folder>"}
+    """
+    err = _docs_require_admin(request.user)
+    if err:
+        return err
+
+    produkt = get_object_or_404(Produkt, pk=pk)
+    root = docs_root()
+
+    if not produkt.documents_path:
+        return JsonResponse({'status': 'error', 'message': 'Produkt nemá nastavenú cestu k dokumentom.'}, status=400)
+
+    try:
+        data = json.loads(request.body)
+    except (json.JSONDecodeError, AttributeError):
+        return JsonResponse({'status': 'error', 'message': 'Neplatný JSON.'}, status=400)
+
+    subpath = data.get('subpath', '').strip()
+    if not subpath:
+        return JsonResponse({'status': 'error', 'message': 'Chýba subpath.'}, status=400)
+
+    try:
+        base = safe_resolve(produkt.documents_path, root)
+        target = safe_resolve(subpath, base)
+        safe_resolve(to_rel(target, root), root)
+    except ValueError:
+        return JsonResponse({'status': 'error', 'message': 'Neplatná cesta (zakázaný prístup).'}, status=400)
+
+    if not target.exists():
+        return JsonResponse({'status': 'error', 'message': 'Súbor/priečinok neexistuje.'}, status=404)
+
+    # Build trash destination: trash_root / <timestamp>__<user>__<rel_from_root>
+    src_rel = to_rel(target, root)
+    ts = timezone.now().strftime('%Y%m%d_%H%M%S')
+    username = request.user.username
+    trash_prefix = f"{ts}__{username}"
+    trash_dest = trash_root() / trash_prefix / src_rel
+
+    trash_dest.parent.mkdir(parents=True, exist_ok=True)
+
+    # Handle collision at trash destination
+    trash_dest = resolve_collision(trash_dest)
+
+    size = None
+    if target.is_file():
+        size = target.stat().st_size
+
+    shutil.move(str(target), str(trash_dest))
+
+    dest_rel = to_rel(trash_dest, trash_root())
+    _log_doc_action(request.user, produkt, DocumentAuditLog.ACTION_DELETE,
+                    src=src_rel, dest=dest_rel, size=size)
+
+    return JsonResponse({'status': 'ok', 'message': 'Presunuté do koša.', 'trash_path': dest_rel})
+
+
+# ─── Trash list ──────────────────────────────────────────────────────────────
+
+@login_required
+def docs_trash_list(request):
+    """Return trash audit log entries.
+
+    GET /api/docs/trash/?produkt_pk=<optional>
+    """
+    qs = DocumentAuditLog.objects.filter(
+        action=DocumentAuditLog.ACTION_DELETE
+    ).select_related('user', 'produkt').order_by('-timestamp')
+
+    produkt_pk = request.GET.get('produkt_pk')
+    if produkt_pk:
+        qs = qs.filter(produkt_id=produkt_pk)
+
+    items = [
+        {
+            'id': log.id,
+            'src_rel_path': log.src_rel_path,
+            'dest_rel_path': log.dest_rel_path,
+            'user': log.user.username if log.user else '–',
+            'timestamp': log.timestamp.strftime('%d.%m.%Y %H:%M'),
+            'produkt': str(log.produkt) if log.produkt else '–',
+            'produkt_pk': log.produkt_id,
+            'size': log.file_size,
+        }
+        for log in qs[:TRASH_LIST_LIMIT]
+    ]
+    return JsonResponse({'status': 'ok', 'items': items})
+
+
+# ─── Trash restore ───────────────────────────────────────────────────────────
+
+@login_required
+@require_POST
+def docs_trash_restore(request):
+    """Restore a trash item to its original location.
+
+    POST /api/docs/trash/restore/
+    Body JSON: {"log_id": <int>}
+    """
+    err = _docs_require_admin(request.user)
+    if err:
+        return err
+
+    try:
+        data = json.loads(request.body)
+    except (json.JSONDecodeError, AttributeError):
+        return JsonResponse({'status': 'error', 'message': 'Neplatný JSON.'}, status=400)
+
+    log_id = data.get('log_id')
+    try:
+        log_entry = DocumentAuditLog.objects.get(
+            pk=log_id, action=DocumentAuditLog.ACTION_DELETE
+        )
+    except DocumentAuditLog.DoesNotExist:
+        return JsonResponse({'status': 'error', 'message': 'Záznam v koši nenájdený.'}, status=404)
+
+    root = docs_root()
+    t_root = trash_root()
+
+    # Resolve trash source
+    try:
+        trash_src = safe_resolve(log_entry.dest_rel_path, t_root)
+    except ValueError:
+        return JsonResponse({'status': 'error', 'message': 'Neplatná cesta v koši.'}, status=400)
+
+    if not trash_src.exists():
+        return JsonResponse({'status': 'error', 'message': 'Súbor v koši neexistuje (možno bol vymazaný).'}, status=404)
+
+    # Resolve restore destination
+    try:
+        restore_dest = safe_resolve(log_entry.src_rel_path, root)
+    except ValueError:
+        return JsonResponse({'status': 'error', 'message': 'Neplatná pôvodná cesta pre obnovenie.'}, status=400)
+
+    restore_dest.parent.mkdir(parents=True, exist_ok=True)
+    restore_dest = resolve_collision(restore_dest)
+
+    shutil.move(str(trash_src), str(restore_dest))
+
+    dest_rel = to_rel(restore_dest, root)
+    _log_doc_action(request.user, log_entry.produkt, DocumentAuditLog.ACTION_RESTORE,
+                    src=log_entry.dest_rel_path, dest=dest_rel)
+
+    return JsonResponse({'status': 'ok', 'message': 'Súbor bol obnovený.', 'restored_to': dest_rel})
