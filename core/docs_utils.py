@@ -160,9 +160,8 @@ def resolve_collision(target_path: Path) -> Path:
         counter += 1
 
     # Fallback: append a short tag to avoid collision (not used for security)
-    import hashlib
-    import time
-    tag = hashlib.md5(str(time.time()).encode()).hexdigest()[:6]  # noqa: S324
+    import uuid
+    tag = uuid.uuid4().hex[:6]
     return parent / f"{stem}_{tag}{suffix}"
 
 

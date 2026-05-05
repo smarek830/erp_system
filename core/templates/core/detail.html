@@ -321,7 +321,8 @@
 
         for (const file of data.files || []) {
             const ext = file.name.split('.').pop().toLowerCase();
-            const icon = ['pdf'].includes(ext) ? '📄' : ['jpg','jpeg','png','gif','bmp','webp'].includes(ext) ? '🖼️' : ['xls','xlsx'].includes(ext) ? '📊' : ['dwg','dxf','step','stp','iges','igs'].includes(ext) ? '📐' : '📎';
+            const iconMap = {pdf:'📄',jpg:'🖼️',jpeg:'🖼️',png:'🖼️',gif:'🖼️',bmp:'🖼️',webp:'🖼️',xls:'📊',xlsx:'📊',dwg:'📐',dxf:'📐',step:'📐',stp:'📐',iges:'📐',igs:'📐'};
+            const icon = iconMap[ext] || '📎';
             html += `<div class="list-group-item list-group-item-action d-flex justify-content-between align-items-center px-3 py-2">
                 <div class="flex-grow-1 text-truncate">${icon} ${escHtml(file.name)}</div>
                 <div class="d-flex align-items-center gap-2 ms-2 flex-shrink-0">
@@ -445,7 +446,7 @@
                 <div class="d-flex justify-content-between align-items-start">
                     <div class="text-truncate flex-grow-1">
                         <small class="text-muted">${escHtml(item.timestamp)} · ${escHtml(item.user)}</small><br>
-                        <span title="${escHtml(item.src_rel_path)}">📎 ${escHtml(item.src_rel_path.split('/').pop())}</span>
+                        <span title="${escHtml(item.src_rel_path)}">📎 ${escHtml(item.src_rel_path.split(/[/\\]/).pop())}</span>
                         <br><small class="text-muted font-monospace">${escHtml(item.src_rel_path)}</small>
                     </div>
                     <button class="btn btn-sm btn-outline-success ms-2 flex-shrink-0 trash-restore-btn" data-log-id="${item.id}">↩️ Obnoviť</button>

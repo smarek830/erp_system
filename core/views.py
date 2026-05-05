@@ -2755,6 +2755,10 @@ def _docs_require_admin(user):
     return None
 
 
+# Max number of trash entries returned by the trash list endpoint
+TRASH_LIST_LIMIT = 200
+
+
 def _log_doc_action(user, produkt, action, src='', dest='', size=None):
     DocumentAuditLog.objects.create(
         user=user,
@@ -2883,19 +2887,20 @@ def docs_list(request, pk):
     folders = []
     files = []
     try:
-        for entry in sorted(target.iterdir(), key=lambda e: (not e.is_dir(), e.name.lower())):
+        raw_entries = list(target.iterdir())
+        raw_entries.sort(key=lambda e: e.name.lower())
+        for entry in raw_entries:
             rel_from_base = to_rel(entry, base)
             if entry.is_dir():
                 folders.append({'name': entry.name, 'subpath': rel_from_base})
             else:
                 stat = entry.stat()
+                mtime = datetime.fromtimestamp(stat.st_mtime, tz=timezone.utc)
                 files.append({
                     'name': entry.name,
                     'subpath': rel_from_base,
                     'size': stat.st_size,
-                    'modified': timezone.make_aware(
-                        datetime.fromtimestamp(stat.st_mtime)
-                    ).strftime('%d.%m.%Y %H:%M'),
+                    'modified': mtime.astimezone(timezone.get_default_timezone()).strftime('%d.%m.%Y %H:%M'),
                 })
     except PermissionError:
         return JsonResponse({'status': 'error', 'message': 'Nemáte prístup k priečinku.'}, status=403)
@@ -2960,7 +2965,11 @@ def docs_download(request, pk):
                 yield chunk_data
 
     response = StreamingHttpResponse(file_iterator(target), content_type=content_type)
-    response['Content-Disposition'] = f'attachment; filename="{target.name}"'
+    from urllib.parse import quote
+    encoded_name = quote(target.name, safe='')
+    response['Content-Disposition'] = (
+        f"attachment; filename=\"{target.name}\"; filename*=UTF-8''{encoded_name}"
+    )
     response['Content-Length'] = target.stat().st_size
     return response
 
@@ -3128,7 +3137,7 @@ def docs_trash_list(request):
             'produkt_pk': log.produkt_id,
             'size': log.file_size,
         }
-        for log in qs[:200]
+        for log in qs[:TRASH_LIST_LIMIT]
     ]
     return JsonResponse({'status': 'ok', 'items': items})
 
