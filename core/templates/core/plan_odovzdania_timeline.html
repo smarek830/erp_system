@@ -1,0 +1,277 @@
+{% extends 'core/base.html' %}
+
+{% block page_title %}
+<span class="page-title-stable">
+    <span class="title-icon" aria-hidden="true">🗓️</span>
+    <span>Expedícia - Timeline</span>
+</span>
+{% endblock %}
+{% block main_class %}app-container-wide{% endblock %}
+
+{% block extra_css %}
+<style>
+    .page-title-stable {
+        display: inline-flex;
+        align-items: center;
+        gap: 0.5rem;
+        line-height: 1.2;
+    }
+
+    .page-title-stable .title-icon {
+        width: 1.35em;
+        display: inline-flex;
+        justify-content: center;
+        flex: 0 0 1.35em;
+    }
+
+    .delivery-grid {
+        display: grid;
+        grid-template-columns: 340px 1fr;
+        gap: 1rem;
+    }
+
+    .timeline-canvas {
+        position: relative;
+        min-height: 44px;
+        border-radius: 10px;
+        border: 1px solid var(--bs-border-color);
+        background:
+            linear-gradient(to right, rgba(13, 110, 253, 0.06) 0 1px, transparent 1px) 0 0 / 10% 100%,
+            var(--bs-body-bg);
+        overflow: hidden;
+    }
+
+    .timeline-bar {
+        position: absolute;
+        top: 10px;
+        height: 22px;
+        border-radius: 999px;
+        min-width: 8px;
+    }
+
+    .timeline-bar.status-nacas { background: linear-gradient(90deg, #0d6efd, #4dabf7); }
+    .timeline-bar.status-riziko { background: linear-gradient(90deg, #ffc107, #ffda6a); }
+    .timeline-bar.status-meska { background: linear-gradient(90deg, #dc3545, #ff6b6b); }
+    .timeline-bar.status-dokoncene { background: linear-gradient(90deg, #198754, #51cf66); }
+
+    .timeline-due-marker,
+    .timeline-today-marker {
+        position: absolute;
+        top: 0;
+        bottom: 0;
+        width: 2px;
+    }
+
+    .timeline-due-marker { background: rgba(33, 37, 41, 0.65); }
+    .timeline-today-marker { background: #fd7e14; z-index: 3; }
+
+    .timeline-row {
+        border: 1px solid var(--bs-border-color);
+        border-radius: 12px;
+        padding: 0.75rem;
+        background: var(--bs-body-bg);
+    }
+
+    .timeline-meta-title {
+        font-weight: 700;
+        line-height: 1.2;
+    }
+
+    .timeline-header-scale {
+        position: relative;
+        border: 1px dashed var(--bs-border-color);
+        border-radius: 12px;
+        padding: 0.75rem;
+        background: var(--bs-tertiary-bg);
+    }
+
+    .timeline-header-line {
+        height: 10px;
+        border-radius: 999px;
+        background: linear-gradient(90deg, #9ec5fe, #6ea8fe 40%, #fd7e14 50%, #6ea8fe 60%, #9ec5fe);
+    }
+
+    .timeline-header-today {
+        position: absolute;
+        top: 0.5rem;
+        bottom: 0.5rem;
+        width: 2px;
+        background: #fd7e14;
+    }
+
+    @media (max-width: 992px) {
+        .delivery-grid {
+            grid-template-columns: 1fr;
+        }
+        .timeline-canvas {
+            min-height: 38px;
+        }
+        .timeline-bar {
+            top: 8px;
+            height: 18px;
+        }
+    }
+</style>
+{% endblock %}
+
+{% block content %}
+<div class="d-flex flex-column flex-lg-row justify-content-between align-items-start align-items-lg-center gap-2 mb-4">
+    <p class="text-muted mb-0">Jednoduchý časový prehľad pripravenosti zakázok na expedíciu podľa požadovaného termínu.</p>
+    <div class="page-actions" role="group" aria-label="Akcie prehľadu expedície">
+        {% if user.is_staff or perms.core.add_objednavka %}
+        <a href="{% url 'import_objednavok_mrp_pdf' %}" class="btn btn-outline-primary btn-sm">📥 Import MRP+PDF</a>
+        {% endif %}
+        <a href="{% url 'plan_vyroby' %}" class="btn btn-outline-secondary btn-sm">🏭 Späť na plán</a>
+    </div>
+</div>
+
+<div class="card card-soft shadow-sm mb-4">
+    <div class="card-body">
+        <form method="get" action="{% url 'plan_odovzdania_timeline' %}" class="row g-3">
+            <div class="col-md-3">
+                <label class="form-label fw-bold">🔍 Vyhľadávanie</label>
+                <input type="text" name="search" class="form-control" value="{{ search }}" placeholder="Číslo zakázky, zákazník, produkt...">
+            </div>
+            <div class="col-md-2">
+                <label class="form-label fw-bold">👤 Zákazník</label>
+                <select name="zakaznik" class="form-select">
+                    <option value="">Všetci</option>
+                    {% for zak in zakaznici %}
+                    <option value="{{ zak }}" {% if zakaznik_filter == zak %}selected{% endif %}>{{ zak }}</option>
+                    {% endfor %}
+                </select>
+            </div>
+            <div class="col-md-2">
+                <label class="form-label fw-bold">🚦 Status</label>
+                <select name="status" class="form-select">
+                    <option value="">Všetky</option>
+                    <option value="meska" {% if status_filter == 'meska' %}selected{% endif %}>Mešká</option>
+                    <option value="riziko" {% if status_filter == 'riziko' %}selected{% endif %}>Riziko</option>
+                    <option value="nacas" {% if status_filter == 'nacas' %}selected{% endif %}>Načas</option>
+                    <option value="dokoncene" {% if status_filter == 'dokoncene' %}selected{% endif %}>Dokončené</option>
+                </select>
+            </div>
+            <div class="col-md-2">
+                <label class="form-label fw-bold">📆 Okno (dni)</label>
+                <select name="days" class="form-select">
+                    <option value="14" {% if days == 14 %}selected{% endif %}>14</option>
+                    <option value="30" {% if days == 30 %}selected{% endif %}>30</option>
+                    <option value="60" {% if days == 60 %}selected{% endif %}>60</option>
+                    <option value="90" {% if days == 90 %}selected{% endif %}>90</option>
+                </select>
+            </div>
+            <div class="col-md-2 d-flex align-items-end">
+                <div class="form-check">
+                    <input class="form-check-input" type="checkbox" value="1" name="only_late" id="onlyLate" {% if only_late %}checked{% endif %}>
+                    <label class="form-check-label fw-semibold" for="onlyLate">Len meškajúce</label>
+                </div>
+            </div>
+            <div class="col-md-1 d-flex align-items-end gap-2">
+                <button type="submit" class="btn btn-primary w-100">Filtruj</button>
+            </div>
+        </form>
+    </div>
+</div>
+
+<div class="row g-3 mb-4 kpi-row-tight">
+    <div class="col-sm-6 col-lg-3">
+        <div class="card border-secondary shadow-sm h-100">
+            <div class="card-body">
+                <p class="text-muted mb-1 small">Spolu v prehľade</p>
+                <h3 class="mb-0">{{ summary.spolu }}</h3>
+            </div>
+        </div>
+    </div>
+    <div class="col-sm-6 col-lg-3">
+        <div class="card border-danger shadow-sm h-100">
+            <div class="card-body">
+                <p class="text-muted mb-1 small">Meškajúce</p>
+                <h3 class="mb-0 text-danger">{{ summary.meska }}</h3>
+            </div>
+        </div>
+    </div>
+    <div class="col-sm-6 col-lg-3">
+        <div class="card border-warning shadow-sm h-100">
+            <div class="card-body">
+                <p class="text-muted mb-1 small">Rizikové</p>
+                <h3 class="mb-0 text-warning">{{ summary.riziko }}</h3>
+            </div>
+        </div>
+    </div>
+    <div class="col-sm-6 col-lg-3">
+        <div class="card border-success shadow-sm h-100">
+            <div class="card-body">
+                <p class="text-muted mb-1 small">Dokončené</p>
+                <h3 class="mb-0 text-success">{{ summary.dokoncene }}</h3>
+            </div>
+        </div>
+    </div>
+</div>
+
+<div class="timeline-header-scale mb-3">
+    <div class="d-flex justify-content-between small text-muted mb-2">
+        <span>Od: {{ window_start|date:"d.m.Y" }}</span>
+        <span>Dnes: {{ today|date:"d.m.Y" }}</span>
+        <span>Do: {{ window_end|date:"d.m.Y" }}</span>
+    </div>
+    <div class="timeline-header-line"></div>
+    {% if today_pct is not None %}
+    <div class="timeline-header-today" style="left: {{ today_pct }}%;"></div>
+    {% endif %}
+</div>
+
+<div class="alert alert-light border mb-3" role="alert">
+    <strong>Legenda:</strong>
+    <span class="badge bg-danger ms-2">Mešká</span>
+    <span class="badge bg-warning text-dark ms-1">Riziko</span>
+    <span class="badge bg-primary ms-1">Načas</span>
+    <span class="badge bg-success ms-1">Dokončené</span>
+</div>
+
+<div class="d-flex flex-column gap-3">
+    {% for row in timeline_rows %}
+    <div class="timeline-row">
+        <div class="delivery-grid align-items-center">
+            <div>
+                <div class="timeline-meta-title">
+                    <a href="{% url 'detail_zakazky' pk=row.obj.pk %}" class="text-decoration-none">#{{ row.obj.cislo_objednavky }}</a>
+                </div>
+                <div class="small text-muted">{{ row.obj.zakaznik }} · {{ row.obj.produkt.nazov }}</div>
+                <div class="small mt-1">
+                    <span class="badge bg-{{ row.status_class }}{% if row.status_class == 'warning' %} text-dark{% endif %}">{{ row.status_label }}</span>
+                    <span class="ms-2">Progres: <strong>{{ row.progres_pct }}%</strong></span>
+                    <span class="ms-2">Zostáva: <strong>{{ row.zostava_kusy }} ks</strong></span>
+                </div>
+                <div class="small text-muted mt-1">
+                    Termín: {{ row.obj.datum_pozadovane|date:"d.m.Y" }}
+                    {% if row.days_to_due < 0 %}
+                        · {{ row.days_to_due|add:'0' }} dní po termíne
+                    {% elif row.days_to_due == 0 %}
+                        · dnes
+                    {% else %}
+                        · o {{ row.days_to_due }} dní
+                    {% endif %}
+                </div>
+            </div>
+
+            <div class="timeline-canvas" aria-label="Timeline zákazky {{ row.obj.cislo_objednavky }}">
+                <div class="timeline-bar status-{{ row.status }}" style="left: {{ row.left_pct }}%; width: {{ row.width_pct }}%;"></div>
+                {% if row.due_in_window %}
+                <div class="timeline-due-marker" style="left: {{ row.due_pct }}%;" title="Termín"></div>
+                {% endif %}
+                {% if today_pct is not None %}
+                <div class="timeline-today-marker" style="left: {{ today_pct }}%;" title="Dnes"></div>
+                {% endif %}
+            </div>
+        </div>
+    </div>
+    {% empty %}
+    <div class="card shadow-sm">
+        <div class="card-body text-center py-5">
+            <h4 class="text-muted mb-2">Žiadne zakázky pre tento filter</h4>
+            <p class="text-muted mb-0">Skúste upraviť zákazníka, status alebo časové okno.</p>
+        </div>
+    </div>
+    {% endfor %}
+</div>
+{% endblock %}

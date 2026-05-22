@@ -1,0 +1,120 @@
+{% extends 'core/base.html' %}
+{% block page_title %}📥 Import MRP + PDF objednávok{% endblock %}
+{% block main_class %}app-container-wide{% endblock %}
+
+{% block content %}
+<div class="d-flex flex-column flex-md-row justify-content-between align-items-start align-items-md-center gap-2 mb-4">
+    <p class="text-muted mb-0">Nahraj CSV export z MRP a PDF objednávky, ERP ich spáruje a importuje jedným krokom.</p>
+    <a href="{% url 'plan_vyroby' %}" class="btn btn-outline-secondary btn-sm">← Späť na plán</a>
+</div>
+
+{% if messages %}
+    {% for message in messages %}
+        <div class="alert alert-{{ message.tags }} alert-dismissible fade show" role="alert">
+            {{ message }}
+            <button type="button" class="btn-close" data-bs-dismiss="alert"></button>
+        </div>
+    {% endfor %}
+{% endif %}
+
+<div class="card shadow-sm">
+    <div class="card-body p-4">
+        <form method="post" enctype="multipart/form-data" id="mrp-import-form">
+            {% csrf_token %}
+
+            <div class="row g-4">
+                <div class="col-lg-6">
+                    <label class="form-label fw-bold">1) CSV z MRP</label>
+                    <div id="csv-drop" class="border rounded-3 p-4 text-center bg-light" style="min-height: 180px; cursor: pointer;">
+                        <div class="h5 mb-2">📄 Pretiahni CSV sem</div>
+                        <div class="text-muted small mb-3">alebo klikni na výber súboru</div>
+                        <input type="file" name="csv_file" id="csv-file-input" class="form-control" accept=".csv,text/csv">
+                        <div id="csv-selected" class="small text-success mt-2"></div>
+                    </div>
+                </div>
+
+                <div class="col-lg-6">
+                    <label class="form-label fw-bold">2) PDF objednávky</label>
+                    <div id="pdf-drop" class="border rounded-3 p-4 text-center bg-light" style="min-height: 180px; cursor: pointer;">
+                        <div class="h5 mb-2">📦 Pretiahni PDF sem</div>
+                        <div class="text-muted small mb-3">môžeš vybrať aj viac súborov naraz</div>
+                        <input type="file" name="pdf_files" id="pdf-file-input" class="form-control" accept="application/pdf,.pdf" multiple>
+                        <div id="pdf-selected" class="small text-success mt-2"></div>
+                    </div>
+                </div>
+            </div>
+
+            <hr class="my-4">
+            <div class="d-flex justify-content-end">
+                <button type="submit" class="btn btn-primary btn-lg">🚀 Spustiť import</button>
+            </div>
+        </form>
+    </div>
+</div>
+
+<script>
+(function () {
+    const csvDrop = document.getElementById('csv-drop');
+    const pdfDrop = document.getElementById('pdf-drop');
+    const csvInput = document.getElementById('csv-file-input');
+    const pdfInput = document.getElementById('pdf-file-input');
+    const csvSelected = document.getElementById('csv-selected');
+    const pdfSelected = document.getElementById('pdf-selected');
+
+    const setDropState = (el, active) => {
+        if (!el) return;
+        el.classList.toggle('border-primary', active);
+        el.classList.toggle('bg-primary-subtle', active);
+    };
+
+    const bindDrop = (dropEl, inputEl, onChange) => {
+        if (!dropEl || !inputEl) return;
+
+        dropEl.addEventListener('dragover', (event) => {
+            event.preventDefault();
+            setDropState(dropEl, true);
+        });
+
+        dropEl.addEventListener('dragleave', () => {
+            setDropState(dropEl, false);
+        });
+
+        dropEl.addEventListener('drop', (event) => {
+            event.preventDefault();
+            setDropState(dropEl, false);
+            if (!event.dataTransfer || !event.dataTransfer.files) return;
+            inputEl.files = event.dataTransfer.files;
+            onChange();
+        });
+    };
+
+    const refreshCsvInfo = () => {
+        if (!csvInput || !csvSelected) return;
+        const file = csvInput.files && csvInput.files[0];
+        csvSelected.textContent = file ? `Vybraný: ${file.name}` : '';
+    };
+
+    const refreshPdfInfo = () => {
+        if (!pdfInput || !pdfSelected) return;
+        const files = Array.from(pdfInput.files || []);
+        if (!files.length) {
+            pdfSelected.textContent = '';
+            return;
+        }
+        const preview = files.slice(0, 4).map((f) => f.name).join(', ');
+        const suffix = files.length > 4 ? ` + ďalšie ${files.length - 4}` : '';
+        pdfSelected.textContent = `Vybrané (${files.length}): ${preview}${suffix}`;
+    };
+
+    if (csvInput) {
+        csvInput.addEventListener('change', refreshCsvInfo);
+    }
+    if (pdfInput) {
+        pdfInput.addEventListener('change', refreshPdfInfo);
+    }
+
+    bindDrop(csvDrop, csvInput, refreshCsvInfo);
+    bindDrop(pdfDrop, pdfInput, refreshPdfInfo);
+})();
+</script>
+{% endblock %}

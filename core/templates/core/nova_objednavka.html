@@ -1,19 +1,15 @@
 {% extends 'core/base.html' %}
+{% block page_title %}➕ Nová objednávka{% endblock %}
+{% block main_class %}app-container-wide{% endblock %}
 
 {% block content %}
-<div class="container py-4">
+<div class="py-3">
     <div class="row justify-content-center">
         <div class="col-lg-8 col-xl-6">
             
             <!-- Hlavička -->
             <div class="d-flex justify-content-between align-items-center mb-4">
-                <h1 class="h3 mb-0">
-                    {% if objednavka %}
-                        ✏️ Upraviť objednávku
-                    {% else %}
-                        ➕ Nová objednávka
-                    {% endif %}
-                </h1>
+                <p class="text-muted mb-0">Vytvorenie novej objednávky.</p>
                 <a href="{% url 'plan_vyroby' %}" class="btn btn-outline-secondary">
                     ← Späť na plán
                 </a>
@@ -27,6 +23,35 @@
                         <button type="button" class="btn-close" data-bs-dismiss="alert"></button>
                     </div>
                 {% endfor %}
+            {% endif %}
+
+            {% if import_form %}
+            <div class="card border-info shadow-sm mb-4">
+                <div class="card-body p-4">
+                    <h5 class="card-title mb-3">📥 Import zákaziek Hangsler (CSV)</h5>
+                    <p class="text-muted small mb-3">
+                        Nahraj CSV export z MRP. Importujú sa iba riadky, kde Odberateľ obsahuje Hangsler.
+                    </p>
+                    <form method="post" action="{% url 'import_objednavok_hangsler_csv' %}" enctype="multipart/form-data" class="row g-3 align-items-end">
+                        {% csrf_token %}
+                        <div class="col-md-8">
+                            <label for="{{ import_form.subor.id_for_label }}" class="form-label">
+                                {{ import_form.subor.label }}
+                            </label>
+                            {{ import_form.subor }}
+                            {% if import_form.subor.help_text %}
+                                <div class="form-text">{{ import_form.subor.help_text }}</div>
+                            {% endif %}
+                        </div>
+                        <div class="col-md-4 d-grid">
+                            <button type="submit" class="btn btn-info text-white">Spustiť import</button>
+                        </div>
+                    </form>
+                    <div class="small text-muted mt-3">
+                        Očakávané stĺpce: Odberateľ, číslo, text položky, Dát.dod., počet mj.
+                    </div>
+                </div>
+            </div>
             {% endif %}
             
             <!-- Formulár -->
@@ -55,6 +80,20 @@
                                     </div>
                                 {% endif %}
                             </div>
+
+                            <!-- Číslo objednávky zákazníka -->
+                            <div class="col-md-6">
+                                <label for="{{ form.cislo_objednavky_zakaznika.id_for_label }}" class="form-label">
+                                    {{ form.cislo_objednavky_zakaznika.label }}
+                                </label>
+                                {{ form.cislo_objednavky_zakaznika }}
+                                <div class="form-text">Voliteľné číslo objednávky od zákazníka alebo PO.</div>
+                                {% if form.cislo_objednavky_zakaznika.errors %}
+                                    <div class="invalid-feedback d-block">
+                                        {{ form.cislo_objednavky_zakaznika.errors }}
+                                    </div>
+                                {% endif %}
+                            </div>
                             
                             <!-- Zákazník -->
                             <div class="col-md-6">
@@ -74,7 +113,13 @@
                                 <label for="{{ form.produkt.id_for_label }}" class="form-label">
                                     {{ form.produkt.label }}
                                 </label>
+                                   <div class="d-flex align-items-center gap-2 mb-2">
+                                       <input type="text" id="produkt-search" class="form-control form-control-sm flex-grow-1" placeholder="🔎 Napíš časť názvu alebo čísla dielu...">
+                                       <small id="produkt-search-count" class="text-muted text-nowrap"></small>
+                                   </div>
                                 {{ form.produkt }}
+                                   <div id="produkt-no-results" class="text-danger small mt-1 d-none">Žiadny produkt nebol nájdený.</div>
+                                   <div class="form-text">Zadaj krátky text a zoznam produktov sa vyfiltruje. Stlač Enter pre výber prvého výsledku.</div>
                                 {% if form.produkt.errors %}
                                     <div class="invalid-feedback d-block">
                                         {{ form.produkt.errors }}
@@ -234,6 +279,7 @@
 <script>
     (function () {
         const selectEl = document.getElementById("id_produkt");
+        const searchEl = document.getElementById("produkt-search");
         const infoEl = document.getElementById("sklad-info");
         const materialEl = document.getElementById("material-info");
         const warningBannerEl = document.getElementById("material-warning-banner");
@@ -253,6 +299,10 @@
         let currentHasShortage = false;
         let currentShortageMessage = '';
         const submitDefaultLabel = submitBtn ? submitBtn.textContent : '';
+        const allProductOptions = Array.from(selectEl.options).map((opt) => ({
+            value: opt.value,
+            text: opt.text,
+        }));
 
         const showShortageModal = (message) => {
             if (!shortageModalEl || !window.bootstrap || !window.bootstrap.Modal) {
@@ -293,6 +343,56 @@
             currentHasShortage = Boolean(hasShortage);
             currentShortageMessage = message || '';
             updateSubmitState(currentHasShortage);
+        };
+
+        const normalizeText = (value) => String(value || '')
+            .trim()
+            .toLowerCase()
+            .normalize('NFD')
+            .replace(/[\u0300-\u036f]/g, '');
+
+        const countEl = document.getElementById('produkt-search-count');
+        const noResultsEl = document.getElementById('produkt-no-results');
+
+        const filterProductOptions = () => {
+            if (!searchEl) return;
+
+            const query = normalizeText(searchEl.value);
+            const currentValue = selectEl.value;
+            const filtered = allProductOptions.filter((opt) => {
+                if (!opt.value) return true; // keep placeholder
+                return normalizeText(opt.text).includes(query);
+            });
+
+            selectEl.innerHTML = '';
+            filtered.forEach((opt) => {
+                const optionEl = document.createElement('option');
+                optionEl.value = opt.value;
+                optionEl.textContent = opt.text;
+                selectEl.appendChild(optionEl);
+            });
+
+            if (filtered.some((opt) => opt.value === currentValue)) {
+                selectEl.value = currentValue;
+            } else {
+                selectEl.value = '';
+            }
+
+            // result count (excluding placeholder)
+            const realCount = filtered.filter(o => o.value).length;
+            if (countEl) {
+                if (query) {
+                    countEl.textContent = realCount + ' výsledkov';
+                    countEl.className = realCount > 0 ? 'text-success text-nowrap small fw-semibold' : 'text-danger text-nowrap small fw-semibold';
+                } else {
+                    countEl.textContent = '';
+                }
+            }
+            if (noResultsEl) {
+                noResultsEl.classList.toggle('d-none', !query || realCount > 0);
+            }
+
+            updateInfo();
         };
 
         const normalizeUnit = (value) => String(value || '')
@@ -464,6 +564,19 @@
         };
 
         selectEl.addEventListener("change", updateInfo);
+        if (searchEl) {
+            searchEl.addEventListener("input", filterProductOptions);
+            searchEl.addEventListener("keydown", (e) => {
+                if (e.key !== 'Enter') return;
+                e.preventDefault();
+                const first = Array.from(selectEl.options).find(o => o.value);
+                if (first) {
+                    selectEl.value = first.value;
+                    selectEl.dispatchEvent(new Event('change'));
+                    searchEl.blur();
+                }
+            });
+        }
         if (qtyEl) {
             qtyEl.addEventListener("input", updateInfo);
         }

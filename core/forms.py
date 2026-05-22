@@ -22,6 +22,7 @@ class ObjednavkaForm(forms.ModelForm):
         model = Objednavka
         fields = [
             'cislo_objednavky', 
+            'cislo_objednavky_zakaznika',
             'zakaznik', 
             'produkt', 
             'mnozstvo', 
@@ -32,6 +33,10 @@ class ObjednavkaForm(forms.ModelForm):
             'cislo_objednavky': forms.TextInput(attrs={
                 'class': 'form-control',
                 'placeholder': 'nechajte prázdne pre auto'
+            }),
+            'cislo_objednavky_zakaznika': forms.TextInput(attrs={
+                'class': 'form-control',
+                'placeholder': 'Číslo objednávky od zákazníka / PO'
             }),
             'zakaznik': forms.TextInput(attrs={
                 'class': 'form-control',
@@ -57,6 +62,7 @@ class ObjednavkaForm(forms.ModelForm):
         }
         labels = {
             'cislo_objednavky': 'Číslo objednávky',
+            'cislo_objednavky_zakaznika': 'Číslo objednávky zákazníka',
             'zakaznik': 'Zákazník *',
             'produkt': 'Produkt *',
             'mnozstvo': 'Množstvo (ks) *',
@@ -79,6 +85,16 @@ class ObjednavkaForm(forms.ModelForm):
         if datum and datum < timezone.now().date():
             raise forms.ValidationError('Termín nemôže byť v minulosti')
         return datum
+
+
+class ObjednavkaImportCSVForm(forms.Form):
+    """Formulár pre manuálny import objednávok z CSV exportu MRP."""
+
+    subor = forms.FileField(
+        label='CSV export z MRP',
+        help_text='Podporovaný formát: CSV UTF-8 so separátorom ;',
+        widget=forms.ClearableFileInput(attrs={'class': 'form-control', 'accept': '.csv,text/csv'}),
+    )
 
 
 class KontraktForm(forms.ModelForm):
@@ -137,6 +153,33 @@ class KontraktForm(forms.ModelForm):
     def __init__(self, *args, **kwargs):
         super().__init__(*args, **kwargs)
         self.fields['cislo_kontraktu'].required = False
+        self.fields['produkt'].queryset = Produkt.objects.all().order_by('cislo_dielu', 'nazov')
+        self.fields['produkt'].label_from_instance = (
+            lambda obj: f"{obj.cislo_dielu} | {obj.nazov} | Index: {obj.index or '-'}"
+        )
+
+    def clean_cislo_kontraktu(self):
+        cislo_kontraktu = (self.cleaned_data.get('cislo_kontraktu') or '').strip()
+        if not cislo_kontraktu:
+            return cislo_kontraktu
+
+        existing = Kontrakt.objects.filter(cislo_kontraktu=cislo_kontraktu)
+        if self.instance.pk:
+            existing = existing.exclude(pk=self.instance.pk)
+
+        existing = existing.first()
+        if not existing:
+            return cislo_kontraktu
+
+        if existing.datum_do < timezone.now().date():
+            raise forms.ValidationError(
+                f'Toto číslo už používa expirovaný kontrakt do {existing.datum_do:%d.%m.%Y}. '
+                f'Nájdete ho v pláne výroby po vyhľadaní podľa čísla kontraktu.'
+            )
+
+        raise forms.ValidationError(
+            f'Toto číslo už používa kontrakt platný do {existing.datum_do:%d.%m.%Y}.'
+        )
 
     def clean(self):
         cleaned_data = super().clean()
@@ -214,16 +257,16 @@ class ProduktForm(forms.ModelForm):
             'nazov',
             'cislo_dielu',
             'cislo_vykresu',
+            'vykres_pdf',
             'index',
             'material',
             'rozmer_polotovaru',
+            'poznamka',
             'spotreba_ks',
             'material_ref',
             'dlzka_na_kus_mm',
             'cas_vyroby',
             'norma_hod',
-            'vykres_pdf',
-            'baliaci_predpis_pdf',
         ]
         widgets = {
             'nazov': forms.TextInput(attrs={
@@ -238,6 +281,9 @@ class ProduktForm(forms.ModelForm):
                 'class': 'form-control',
                 'placeholder': 'Číslo výkresu'
             }),
+            'vykres_pdf': forms.FileInput(attrs={
+                'class': 'form-control'
+            }),
             'index': forms.TextInput(attrs={
                 'class': 'form-control',
                 'placeholder': 'Napr. 0, A, B2'
@@ -249,6 +295,11 @@ class ProduktForm(forms.ModelForm):
             'rozmer_polotovaru': forms.TextInput(attrs={
                 'class': 'form-control',
                 'placeholder': 'Rozmer polotovaru'
+            }),
+            'poznamka': forms.Textarea(attrs={
+                'class': 'form-control',
+                'rows': 2,
+                'placeholder': 'Poznámka k produktu'
             }),
             'spotreba_ks': forms.NumberInput(attrs={
                 'class': 'form-control',
@@ -271,29 +322,21 @@ class ProduktForm(forms.ModelForm):
                 'class': 'form-control',
                 'min': '0'
             }),
-            'vykres_pdf': forms.ClearableFileInput(attrs={
-                'class': 'form-control',
-                'accept': '.pdf,application/pdf'
-            }),
-            'baliaci_predpis_pdf': forms.ClearableFileInput(attrs={
-                'class': 'form-control',
-                'accept': '.pdf,application/pdf'
-            }),
         }
         labels = {
             'nazov': 'Názov produktu *',
             'cislo_dielu': 'Číslo dielu *',
             'cislo_vykresu': 'Číslo výkresu',
+            'vykres_pdf': 'Výkres (PDF)',
             'index': 'Index zmeny',
             'material': 'Materiál',
             'rozmer_polotovaru': 'Rozmer polotovaru',
+            'poznamka': 'Poznámka',
             'spotreba_ks': 'Spotreba na kus',
             'material_ref': 'Materiál (sklad)',
             'dlzka_na_kus_mm': 'Dĺžka na kus (mm)',
             'cas_vyroby': 'Čas výroby (min)',
             'norma_hod': 'Norma (ks/hod)',
-            'vykres_pdf': 'Výkres (PDF)',
-            'baliaci_predpis_pdf': 'Baliaci predpis (PDF)',
         }
 
 
@@ -425,6 +468,13 @@ class MaterialForm(forms.ModelForm):
 
 class SkladHotovychDielovForm(forms.ModelForm):
     """Formulár pre úpravu skladovej položky hotových dielov"""
+
+    def __init__(self, *args, **kwargs):
+        super().__init__(*args, **kwargs)
+        self.fields['produkt'].queryset = Produkt.objects.all().order_by('index', 'cislo_dielu')
+        self.fields['produkt'].label_from_instance = (
+            lambda obj: f"{obj.index} - {obj.cislo_dielu} | {obj.nazov}"
+        )
 
     class Meta:
         model = SkladHotovychDielov

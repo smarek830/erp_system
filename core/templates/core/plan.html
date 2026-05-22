@@ -1,6 +1,7 @@
 {% extends 'core/base.html' %}
 
 {% block page_title %}🏭 Plán výroby{% endblock %}
+{% block main_class %}app-container-wide{% endblock %}
 
 {% block content %}
 <div class="d-flex flex-column flex-lg-row justify-content-between align-items-start align-items-lg-center gap-2 mb-4">
@@ -9,10 +10,14 @@
         <a href="{% url 'export_plan_excel' %}" class="btn btn-success btn-sm">
             📊 Export Excel
         </a>
+        {% if perms.core.change_kontrakt %}
+            <a href="{% url 'inicializacia_dodavok_kontraktov' %}" class="btn btn-warning btn-sm">🚚 Inicializácia dodávok</a>
+        {% endif %}
         {% if perms.core.add_kontrakt %}
             <a href="{% url 'novy_kontrakt' %}" class="btn btn-info btn-sm">📋 Nový kontrakt</a>
         {% endif %}
-        {% if perms.core.add_objednavka %}
+        {% if user.is_staff or perms.core.add_objednavka %}
+            <a href="{% url 'import_objednavok_mrp_pdf' %}" class="btn btn-outline-primary btn-sm">📥 Import MRP+PDF</a>
             <a href="{% url 'nova_objednavka' %}" class="btn btn-primary btn-sm">➕ Nová zakázka</a>
         {% endif %}
     </div>
@@ -22,30 +27,52 @@
 <div class="card card-soft shadow-sm mb-4">
     <div class="card-body">
         <form method="get" action="{% url 'plan_vyroby' %}" class="row g-3">
-            <div class="col-md-4">
+            <div class="col-md-3">
                 <label class="form-label fw-bold">🔍 Vyhľadávanie</label>
                 <input type="text" name="search" class="form-control" 
                        placeholder="Číslo zakázky, zákazník, produkt..." 
                        value="{{ search }}">
             </div>
             
-            <div class="col-md-3">
+            <div class="col-md-2">
                 <label class="form-label fw-bold">📊 Stav zakázky</label>
                 <select name="stav" class="form-select">
                     <option value="">Všetky stavy</option>
                     <option value="nova" {% if stav_filter == 'nova' %}selected{% endif %}>🆕 Nová</option>
                     <option value="vyroba" {% if stav_filter == 'vyroba' %}selected{% endif %}>⚙️ Vo výrobe</option>
                     <option value="pozastavene" {% if stav_filter == 'pozastavene' %}selected{% endif %}>⏸️ Pozastavené</option>
+                    <option value="hotovo" {% if stav_filter == 'hotovo' %}selected{% endif %}>✅ Vybavené</option>
                 </select>
             </div>
             
-            <div class="col-md-3">
+            <div class="col-md-2">
                 <label class="form-label fw-bold">👤 Zákazník</label>
                 <select name="zakaznik" class="form-select">
                     <option value="">Všetci zákazníci</option>
                     {% for z in zakaznici %}
                     <option value="{{ z }}" {% if zakaznik_filter == z %}selected{% endif %}>{{ z }}</option>
                     {% endfor %}
+                </select>
+            </div>
+
+            <div class="col-md-2">
+                <label class="form-label fw-bold">↕️ Sortovať podľa</label>
+                <select name="sort" class="form-select">
+                    <option value="termin" {% if sort_key == 'termin' %}selected{% endif %}>Termín</option>
+                    <option value="zakazka" {% if sort_key == 'zakazka' %}selected{% endif %}>Zakázka</option>
+                    <option value="zakaznik" {% if sort_key == 'zakaznik' %}selected{% endif %}>Zákazník</option>
+                    <option value="produkt" {% if sort_key == 'produkt' %}selected{% endif %}>Produkt</option>
+                    <option value="mnozstvo" {% if sort_key == 'mnozstvo' %}selected{% endif %}>Množstvo</option>
+                    <option value="vyrobene" {% if sort_key == 'vyrobene' %}selected{% endif %}>Vyrobené</option>
+                    <option value="stav" {% if sort_key == 'stav' %}selected{% endif %}>Stav</option>
+                </select>
+            </div>
+
+            <div class="col-md-1">
+                <label class="form-label fw-bold">Smer</label>
+                <select name="direction" class="form-select">
+                    <option value="asc" {% if sort_direction == 'asc' %}selected{% endif %}>↑</option>
+                    <option value="desc" {% if sort_direction == 'desc' %}selected{% endif %}>↓</option>
                 </select>
             </div>
             
@@ -57,110 +84,37 @@
     </div>
 </div>
 
+{% if expirovane_neukoncene_count %}
+<div class="alert alert-danger d-flex justify-content-between align-items-center mb-4" role="alert">
+    <div>
+        <strong>⚠️ Pozor:</strong> evidujete {{ expirovane_neukoncene_count }} expirovaných kontraktov, ktoré ešte nie sú ukončené.
+    </div>
+    <div class="small">Skontrolujte termíny a zostávajúce množstvá.</div>
+</div>
+{% endif %}
+
 <!-- VERZIA PRE PC -->
 <div class="d-none d-md-block">
-    
-    <!-- KONTRAKTY -->
-    <div class="mb-5">
-        <div class="d-flex justify-content-between align-items-center mb-3">
-            <h2 class="h4 mb-0 text-primary">📋 Kontrakty (Dlhodobé zmluvy)</h2>
-            <span class="badge bg-primary fs-6">{{ kontrakty.count }} aktívnych</span>
-        </div>
-        
-        <div class="card shadow-sm">
-            <div class="card-body p-0">
-                <div class="table-responsive">
-                    <table class="table table-hover mb-0 align-middle table-clean table-sticky">
-                        <thead class="table-primary">
-                            <tr>
-                                <th>Číslo kontraktu</th>
-                                <th>Zákazník</th>
-                                <th>Produkt</th>
-                                <th class="text-center">Celkovo kusov</th>
-                                <th class="text-center">Zostáva dodať</th>
-                                <th class="text-center">Progress</th>
-                                <th>Platnosť do</th>
-                                <th class="text-center">Skladom</th>
-                                <th class="text-end">Akcia</th>
-                            </tr>
-                        </thead>
-                        <tbody>
-                            {% for kontrakt in kontrakty %}
-                            <tr class="{% if kontrakt.datum_do < dnes|add:'days:7' %}table-warning{% endif %}">
-                                <td class="fw-bold">#{{ kontrakt.cislo_kontraktu }}</td>
-                                <td>{{ kontrakt.zakaznik }}</td>
-                                <td>
-                                    <div class="fw-bold">{{ kontrakt.produkt.nazov }}</div>
-                                    <small class="text-muted">{{ kontrakt.produkt.cislo_dielu }}</small>
-                                </td>
-                                <td class="text-center">{{ kontrakt.pocet_kusov_celkovo }} ks</td>
-                                <td class="text-center">
-                                    <span class="badge bg-info text-dark fs-6">
-                                        {{ kontrakt.zostavajuce_mnozstvo }} ks
-                                    </span>
-                                </td>
-                                <td class="text-center" style="min-width: 150px;">
-                                    <div class="progress" style="height: 25px;">
-                                        {% widthratio kontrakt.zostavajuce_mnozstvo kontrakt.pocet_kusov_celkovo -100 as percent %}
-                                        <div class="progress-bar bg-success" role="progressbar" 
-                                             style="width: {{ percent|add:100 }}%">
-                                            {{ percent|add:100 }}%
-                                        </div>
-                                    </div>
-                                </td>
-                                <td>
-                                    {% if kontrakt.datum_do < dnes %}
-                                        <span class="badge bg-danger">⚠️ {{ kontrakt.datum_do|date:"d.m.Y" }}</span>
-                                    {% elif kontrakt.datum_do < dnes|add:'days:7' %}
-                                        <span class="badge bg-warning text-dark">⚠️ {{ kontrakt.datum_do|date:"d.m.Y" }}</span>
-                                    {% elif kontrakt.datum_do < dnes|add:'days:30' %}
-                                        <span class="text-warning fw-bold">{{ kontrakt.datum_do|date:"d.m.Y" }}</span>
-                                    {% else %}
-                                        {{ kontrakt.datum_do|date:"d.m.Y" }}
-                                    {% endif %}
-                                </td>
-                                <td class="text-center">
-                                    {% if kontrakt.je_skladom %}
-                                        <span class="badge bg-success">✓ Áno</span>
-                                    {% else %}
-                                        <span class="badge bg-warning text-dark">⚠️ Nie</span>
-                                    {% endif %}
-                                </td>
-                                <td class="text-end">
-                                    <div class="btn-group" role="group">
-                                        {% if perms.core.add_vyrobnadavka %}
-                                            <a href="{% url 'vytvor_davku_z_kontraktu' kontrakt_pk=kontrakt.pk %}" 
-                                               class="btn btn-success btn-sm" title="Vytvoriť výrobnú dávku">
-                                                ➕ Dávka
-                                            </a>
-                                        {% endif %}
-                                        {% if perms.core.change_kontrakt %}
-                                            <a href="{% url 'upravit_kontrakt' kontrakt.pk %}" 
-                                               class="btn btn-outline-primary btn-sm" title="Upraviť">
-                                                ✏️
-                                            </a>
-                                        {% endif %}
-                                    </div>
-                                </td>
-                            </tr>
-                            {% empty %}
-                            <tr>
-                                <td colspan="9" class="text-center py-4">
-                                    <p class="text-muted mb-0">Žiadne aktívne kontrakty</p>
-                                </td>
-                            </tr>
-                            {% endfor %}
-                        </tbody>
-                    </table>
-                </div>
-            </div>
-        </div>
-    </div>
+    <ul class="nav nav-pills mb-3" id="planDesktopTabs" role="tablist">
+        <li class="nav-item" role="presentation">
+            <button class="nav-link active" id="desktop-zakazky-tab" data-bs-toggle="tab" data-bs-target="#desktop-zakazky" type="button" role="tab" aria-controls="desktop-zakazky" aria-selected="true">
+                🛒 Zakázky <span class="badge bg-success ms-1">{{ zakazky.count }}</span>
+            </button>
+        </li>
+        <li class="nav-item" role="presentation">
+            <button class="nav-link" id="desktop-kontrakty-tab" data-bs-toggle="tab" data-bs-target="#desktop-kontrakty" type="button" role="tab" aria-controls="desktop-kontrakty" aria-selected="false">
+                📋 Kontrakty <span class="badge bg-primary ms-1">{{ kontrakty.count }}</span>
+            </button>
+        </li>
+    </ul>
+
+    <div class="tab-content" id="planDesktopTabsContent">
+    <div class="tab-pane fade show active" id="desktop-zakazky" role="tabpanel" aria-labelledby="desktop-zakazky-tab" tabindex="0">
 
     <!-- ZAKÁZKY -->
     <div>
         <div class="d-flex justify-content-between align-items-center mb-3">
-            <h2 class="h4 mb-0 text-success">🛒 Zakázky (Jednorazové objednávky)</h2>
+            <p class="mb-0 text-success fw-semibold">🛒 Zakázky (Jednorazové objednávky)</p>
             <span class="badge bg-success fs-6">{{ zakazky.count }} aktívnych</span>
         </div>
         
@@ -172,6 +126,7 @@
                             <tr>
                                 <th>Termín</th>
                                 <th>Zakázka</th>
+                                <th>Obj. zákazníka</th>
                                 <th>Zákazník</th>
                                 <th>Produkt</th>
                                 <th class="text-center">Množstvo</th>
@@ -182,7 +137,7 @@
                         </thead>
                         <tbody>
                             {% for obj in zakazky %}
-                            <tr class="{% if obj.stav == 'vyroba' %}table-warning{% elif obj.datum_pozadovane < dnes %}table-danger{% elif obj.datum_pozadovane == dnes %}table-warning{% elif obj.datum_pozadovane < dnes|add:'days:3' %}table-info{% endif %}">
+                            <tr class="{% if obj.stav == 'hotovo' %}table-success{% elif obj.stav == 'vyroba' %}table-warning{% elif obj.datum_pozadovane < dnes %}table-danger{% elif obj.datum_pozadovane == dnes %}table-warning{% elif obj.datum_pozadovane < dnes|add:'days:3' %}table-info{% endif %}">
                                 <td class="fw-bold">
                                     {% if obj.datum_pozadovane < dnes %}
                                         <span class="badge bg-danger fs-6">🔴 {{ obj.datum_pozadovane|date:"d.m.Y" }}</span>
@@ -198,6 +153,13 @@
                                     <a href="{% url 'detail_zakazky' pk=obj.pk %}" class="text-decoration-none fw-bold">
                                         #{{ obj.cislo_objednavky }}
                                     </a>
+                                </td>
+                                <td>
+                                    {% if obj.cislo_objednavky_zakaznika %}
+                                        <span class="fw-semibold">{{ obj.cislo_objednavky_zakaznika }}</span>
+                                    {% else %}
+                                        <span class="text-muted">—</span>
+                                    {% endif %}
                                 </td>
                                 <td>{{ obj.zakaznik }}</td>
                                 <td>
@@ -221,13 +183,15 @@
                                         <span class="badge bg-warning text-dark">⚙️ Vo výrobe</span>
                                     {% elif obj.stav == 'pozastavene' %}
                                         <span class="badge bg-secondary">⏸️ Pozastavené</span>
+                                    {% elif obj.stav == 'hotovo' %}
+                                        <span class="badge bg-success">✅ Vybavené</span>
                                     {% endif %}
                                 </td>
                                 <td class="text-end">
                                     <div class="btn-group" role="group">
                                         <a href="{% url 'detail_zakazky' pk=obj.pk %}" 
                                            class="btn btn-outline-info btn-sm">👁️</a>
-                                                     {% if perms.core.change_objednavka %}
+                                                     {% if can_manage_orders %}
                                                           <a href="{% url 'upravit_objednavku' obj.pk %}" 
                                                               class="btn btn-outline-dark btn-sm">✏️</a>
                                         {% endif %}
@@ -236,7 +200,7 @@
                             </tr>
                             {% empty %}
                             <tr>
-                                <td colspan="8" class="text-center py-5">
+                                <td colspan="9" class="text-center py-5">
                                     <h4 class="text-muted">🎉 Všetko je hotové!</h4>
                                     <p class="mb-0">Momentálne nie sú žiadne otvorené zakázky.</p>
                                 </td>
@@ -248,95 +212,149 @@
             </div>
         </div>
     </div>
+
+    </div>
+    <div class="tab-pane fade" id="desktop-kontrakty" role="tabpanel" aria-labelledby="desktop-kontrakty-tab" tabindex="0">
+    <!-- KONTRAKTY -->
+    <div class="mb-3">
+        <div class="d-flex justify-content-between align-items-center mb-3">
+            <p class="mb-0 text-primary fw-semibold">📋 Kontrakty (Dlhodobé zmluvy)</p>
+            <span class="badge bg-primary fs-6">{{ kontrakty.count }} {% if search %}nájdených{% else %}aktívnych{% endif %}</span>
+        </div>
+        
+        <div class="card shadow-sm">
+            <div class="card-body p-0">
+                <div class="table-responsive">
+                    <table class="table table-hover mb-0 align-middle table-clean table-sticky plan-contract-table">
+                        <thead class="table-primary">
+                            <tr id="plan-kontrakty-sort-row">
+                                <th class="contract-col-number sortable-th" data-col="0" style="cursor:pointer;user-select:none">Číslo kontraktu <span class="sort-icon text-muted small">⇅</span></th>
+                                <th class="contract-col-customer sortable-th" data-col="1" style="cursor:pointer;user-select:none">Zákazník <span class="sort-icon text-muted small">⇅</span></th>
+                                <th class="contract-col-product sortable-th" data-col="2" style="cursor:pointer;user-select:none">Produkt <span class="sort-icon text-muted small">⇅</span></th>
+                                <th class="text-center contract-col-status sortable-th" data-col="3" style="cursor:pointer;user-select:none">Status <span class="sort-icon text-muted small">⇅</span></th>
+                                <th class="text-center contract-col-total sortable-th" data-col="4" style="cursor:pointer;user-select:none">Celkovo kusov <span class="sort-icon text-muted small">⇅</span></th>
+                                <th class="text-center contract-col-remaining sortable-th" data-col="5" style="cursor:pointer;user-select:none">Zostáva dodať <span class="sort-icon text-muted small">⇅</span></th>
+                                <th class="text-center contract-col-progress sortable-th" data-col="6" style="cursor:pointer;user-select:none">Progress <span class="sort-icon text-muted small">⇅</span></th>
+                                <th class="contract-col-date sortable-th" data-col="7" style="cursor:pointer;user-select:none">Platnosť do <span class="sort-icon text-muted small">⇅</span></th>
+                                <th class="text-center contract-col-stock sortable-th" data-col="8" style="cursor:pointer;user-select:none">Zásoby <span class="sort-icon text-muted small">⇅</span></th>
+                                <th class="text-start contract-actions-head contract-col-actions">Akcia</th>
+                            </tr>
+                        </thead>
+                        <tbody id="plan-kontrakty-tbody">
+                            {% for kontrakt in kontrakty %}
+                            <tr class="{% if kontrakt.datum_do < dnes and kontrakt.zostavajuce_mnozstvo > 0 %}table-danger{% elif kontrakt.datum_do < dnes|add:'days:7' %}table-warning{% endif %}">
+                                <td class="fw-bold contract-col-number" data-sort="{{ kontrakt.cislo_kontraktu }}">#{{ kontrakt.cislo_kontraktu }}</td>
+                                <td class="contract-col-customer" data-sort="{{ kontrakt.zakaznik }}">
+                                    <div class="contract-customer text-truncate" title="{{ kontrakt.zakaznik }}">{{ kontrakt.zakaznik }}</div>
+                                </td>
+                                <td class="contract-col-product" data-sort="{{ kontrakt.produkt.cislo_dielu }}">
+                                    <div class="fw-bold contract-product-name text-truncate" title="{{ kontrakt.produkt.nazov }}">{{ kontrakt.produkt.nazov }}</div>
+                                    <small class="text-muted">{{ kontrakt.produkt.cislo_dielu }}</small>
+                                </td>
+                                <td class="text-center contract-col-status" data-sort="{% if kontrakt.zostavajuce_mnozstvo == 0 %}4{% elif kontrakt.datum_do < dnes %}1{% elif kontrakt.datum_do < dnes|add:'days:7' %}2{% else %}3{% endif %}">
+                                    {% if kontrakt.zostavajuce_mnozstvo == 0 %}
+                                        <span class="badge bg-success">Ukončený</span>
+                                    {% elif kontrakt.datum_do < dnes %}
+                                        <span class="badge bg-danger">Expirovaný</span>
+                                        <div><small class="text-danger fw-semibold contract-note">Po termíne</small></div>
+                                    {% elif kontrakt.datum_do < dnes|add:'days:7' %}
+                                        <span class="badge bg-warning text-dark">Končí čoskoro</span>
+                                    {% else %}
+                                        <span class="badge bg-primary">Aktívny</span>
+                                    {% endif %}
+                                </td>
+                                <td class="text-center text-nowrap contract-col-total" data-sort="{{ kontrakt.pocet_kusov_celkovo }}">{{ kontrakt.pocet_kusov_celkovo }} ks</td>
+                                <td class="text-center contract-col-remaining" data-sort="{{ kontrakt.zostavajuce_mnozstvo }}">
+                                    <span class="badge bg-info text-dark">
+                                        {{ kontrakt.zostavajuce_mnozstvo }} ks
+                                    </span>
+                                </td>
+                                {% widthratio kontrakt.ks_dodane kontrakt.pocet_kusov_celkovo 100 as pct_dodane %}
+                                {% widthratio kontrakt.ks_sklad kontrakt.pocet_kusov_celkovo 100 as pct_sklad %}
+                                <td class="text-center contract-progress-cell contract-col-progress" data-sort="{{ kontrakt.ks_dodane }}">
+                                    <div class="progress contract-progress-bar" title="Dod.: {{ kontrakt.ks_dodane }} ks | Sklad: {{ kontrakt.ks_sklad }} ks | Celkovo: {{ kontrakt.pocet_kusov_celkovo }} ks">
+                                        <div class="progress-bar bg-success" role="progressbar" style="width: {{ pct_dodane }}%" title="Dod.: {{ kontrakt.ks_dodane }} ks"></div>
+                                        <div class="progress-bar bg-info" role="progressbar" style="width: {{ pct_sklad }}%" title="Sklad: {{ kontrakt.ks_sklad }} ks"></div>
+                                    </div>
+                                    <small class="text-muted d-block mt-1" style="font-size:0.7rem">{{ kontrakt.ks_dodane }}+{{ kontrakt.ks_sklad }}/{{ kontrakt.pocet_kusov_celkovo }} ks</small>
+                                    {% if kontrakt.zostavajuce_mnozstvo > 0 and kontrakt.ks_sklad >= kontrakt.zostavajuce_mnozstvo %}
+                                        <span class="badge bg-danger mt-1" title="Sklad pokrýva celý zostatok, zastav výrobu!">&#x1F6D1; Zastav výrobu</span>
+                                    {% endif %}
+                                </td>
+                                <td class="contract-col-date" data-sort="{{ kontrakt.datum_do|date:'Y-m-d' }}">
+                                    {% if kontrakt.datum_do < dnes and kontrakt.zostavajuce_mnozstvo > 0 %}
+                                        <span class="badge bg-danger">⚠️ {{ kontrakt.datum_do|date:"d.m.Y" }}</span>
+                                        <div><small class="text-danger fw-semibold contract-note">Bez ukončenia</small></div>
+                                    {% elif kontrakt.datum_do < dnes %}
+                                        <span class="badge bg-secondary">{{ kontrakt.datum_do|date:"d.m.Y" }}</span>
+                                    {% elif kontrakt.datum_do < dnes|add:'days:7' %}
+                                        <span class="badge bg-warning text-dark">⚠️ {{ kontrakt.datum_do|date:"d.m.Y" }}</span>
+                                    {% elif kontrakt.datum_do < dnes|add:'days:30' %}
+                                        <span class="text-warning fw-bold">{{ kontrakt.datum_do|date:"d.m.Y" }}</span>
+                                    {% else %}
+                                        {{ kontrakt.datum_do|date:"d.m.Y" }}
+                                    {% endif %}
+                                </td>
+                                <td class="text-center contract-col-stock" data-sort="{{ kontrakt.ks_sklad }}">
+                                    {% if kontrakt.ks_sklad > 0 %}
+                                        {% if kontrakt.zostavajuce_mnozstvo > 0 and kontrakt.ks_sklad >= kontrakt.zostavajuce_mnozstvo %}
+                                            <span class="badge bg-danger" title="Sklad pokrýva celý zostatok kontraktu!">&#x1F6D1; {{ kontrakt.ks_sklad }} ks</span>
+                                        {% else %}
+                                            <span class="badge bg-primary" title="Interný sklad - čaká na expedíciu">&#x1F3ED; {{ kontrakt.ks_sklad }} ks</span>
+                                        {% endif %}
+                                    {% else %}
+                                        <span class="text-muted small">—</span>
+                                    {% endif %}
+                                </td>
+                                <td class="text-start contract-actions-cell contract-col-actions">
+                                    <div class="btn-group btn-group-sm contract-actions-group" role="group">
+                                        {% if perms.core.add_vyrobnadavka %}
+                                            <a href="{% url 'vytvor_davku_z_kontraktu' kontrakt_pk=kontrakt.pk %}" 
+                                               class="btn btn-success" title="Vytvoriť výrobnú dávku">
+                                                ➕
+                                            </a>
+                                        {% endif %}
+                                        {% if can_manage_contracts %}
+                                            <a href="{% url 'upravit_kontrakt' kontrakt.pk %}" 
+                                               class="btn btn-outline-primary" title="Upraviť kontrakt">
+                                                ✏️
+                                            </a>
+                                        {% endif %}
+                                    </div>
+                                </td>
+                            </tr>
+                            {% empty %}
+                            <tr>
+                                <td colspan="10" class="text-center py-4">
+                                    <p class="text-muted mb-0">{% if search %}Žiadne kontrakty pre zadané vyhľadávanie{% else %}Žiadne aktívne kontrakty{% endif %}</p>
+                                </td>
+                            </tr>
+                            {% endfor %}
+                        </tbody>
+                    </table>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    </div>
+    </div>
 </div>
 
 <!-- VERZIA PRE MOBIL -->
 <div class="d-md-none">
-    
-    <!-- KONTRAKTY - MOBIL -->
-    <div class="mb-4">
-        <div class="d-flex justify-content-between align-items-center mb-3">
-            <h2 class="h5 mb-0 text-primary">📋 Kontrakty</h2>
-            <span class="badge bg-primary">{{ kontrakty.count }}</span>
-        </div>
-        
-        {% for kontrakt in kontrakty %}
-        <div class="card mb-3 shadow-sm border-start border-4 {% if kontrakt.datum_do < dnes|add:'days:7' %}border-warning{% else %}border-primary{% endif %}">
-            <div class="card-header bg-white d-flex justify-content-between align-items-center py-2">
-                <span class="fw-bold text-dark">#{{ kontrakt.cislo_kontraktu }}</span>
-                {% if kontrakt.je_skladom %}
-                    <span class="badge bg-success">✓ Skladom</span>
-                {% else %}
-                    <span class="badge bg-warning text-dark">⚠️ Vyrobiť</span>
-                {% endif %}
-            </div>
-            
-            <div class="card-body py-3">
-                <h6 class="card-title mb-2">{{ kontrakt.zakaznik }}</h6>
-                
-                <div class="mb-2">
-                    <span class="d-block fw-bold text-primary">{{ kontrakt.produkt.nazov }}</span>
-                    <small class="text-muted">{{ kontrakt.produkt.cislo_dielu }}</small>
-                </div>
-                
-                <!-- Progress bar -->
-                <div class="mb-2">
-                    <div class="d-flex justify-content-between mb-1">
-                        <small class="text-muted">Hotovo:</small>
-                        {% widthratio kontrakt.zostavajuce_mnozstvo kontrakt.pocet_kusov_celkovo -100 as percent %}
-                        <small class="fw-bold text-success">{{ percent|add:100 }}%</small>
-                    </div>
-                    <div class="progress" style="height: 20px;">
-                        <div class="progress-bar bg-success" role="progressbar" 
-                             style="width: {{ percent|add:100 }}%">
-                        </div>
-                    </div>
-                </div>
-                
-                <div class="row g-2 text-center border-top pt-2">
-                    <div class="col-4">
-                        <small class="text-muted d-block">Celkovo</small>
-                        <strong>{{ kontrakt.pocet_kusov_celkovo }} ks</strong>
-                    </div>
-                    <div class="col-4">
-                        <small class="text-muted d-block">Zostáva</small>
-                        <span class="badge bg-info text-dark">{{ kontrakt.zostavajuce_mnozstvo }} ks</span>
-                    </div>
-                    <div class="col-4">
-                        <small class="text-muted d-block">Platnosť</small>
-                        {% if kontrakt.datum_do < dnes %}
-                            <strong class="text-danger">⚠️ {{ kontrakt.datum_do|date:"d.m." }}</strong>
-                        {% elif kontrakt.datum_do < dnes|add:'days:7' %}
-                            <strong class="text-warning">⚠️ {{ kontrakt.datum_do|date:"d.m." }}</strong>
-                        {% else %}
-                            <strong>{{ kontrakt.datum_do|date:"d.m." }}</strong>
-                        {% endif %}
-                    </div>
-                </div>
-            </div>
-            
-            <div class="card-footer bg-light d-flex gap-2">
-                {% if perms.core.add_vyrobnadavka %}
-                    <a href="{% url 'vytvor_davku_z_kontraktu' kontrakt_pk=kontrakt.pk %}" 
-                       class="btn btn-success flex-grow-1">
-                        ➕ Vytvoriť dávku
-                    </a>
-                {% endif %}
-                {% if perms.core.change_kontrakt %}
-                    <a href="{% url 'upravit_kontrakt' kontrakt.pk %}" 
-                       class="btn btn-outline-primary">
-                        ✏️
-                    </a>
-                {% endif %}
-            </div>
-        </div>
-        {% empty %}
-        <div class="alert alert-info text-center">
-            <p class="mb-0">Žiadne aktívne kontrakty</p>
-        </div>
-        {% endfor %}
-    </div>
+    <ul class="nav nav-pills nav-fill mb-3" id="planMobileTabs" role="tablist">
+        <li class="nav-item" role="presentation">
+            <button class="nav-link active" id="mobile-zakazky-tab" data-bs-toggle="tab" data-bs-target="#mobile-zakazky" type="button" role="tab" aria-controls="mobile-zakazky" aria-selected="true">🛒 {{ zakazky.count }}</button>
+        </li>
+        <li class="nav-item" role="presentation">
+            <button class="nav-link" id="mobile-kontrakty-tab" data-bs-toggle="tab" data-bs-target="#mobile-kontrakty" type="button" role="tab" aria-controls="mobile-kontrakty" aria-selected="false">📋 {{ kontrakty.count }}</button>
+        </li>
+    </ul>
 
+    <div class="tab-content" id="planMobileTabsContent">
+    <div class="tab-pane fade show active" id="mobile-zakazky" role="tabpanel" aria-labelledby="mobile-zakazky-tab" tabindex="0">
+    
     <!-- ZAKÁZKY - MOBIL -->
     <div>
         <div class="d-flex justify-content-between align-items-center mb-3">
@@ -367,6 +385,11 @@
             
             <div class="card-body py-3">
                 <h6 class="card-title mb-1">{{ obj.zakaznik }}</h6>
+
+                <div class="mb-2">
+                    <small class="text-muted d-block">Objednávka zákazníka</small>
+                    <strong>{% if obj.cislo_objednavky_zakaznika %}{{ obj.cislo_objednavky_zakaznika }}{% else %}—{% endif %}</strong>
+                </div>
                 
                 <div class="mb-3">
                     <span class="d-block fw-bold text-success">{{ obj.produkt.nazov }}</span>
@@ -414,7 +437,7 @@
                 <a href="{% url 'detail_zakazky' pk=obj.pk %}" class="btn btn-info flex-grow-1">
                     👁️ Detail
                 </a>
-                {% if perms.core.change_objednavka %}
+                {% if can_manage_orders %}
                     <a href="{% url 'upravit_objednavku' obj.pk %}" class="btn btn-outline-secondary">
                         ✏️
                     </a>
@@ -428,6 +451,156 @@
         </div>
         {% endfor %}
     </div>
+
+    </div>
+    <div class="tab-pane fade" id="mobile-kontrakty" role="tabpanel" aria-labelledby="mobile-kontrakty-tab" tabindex="0">
+    
+    <!-- KONTRAKTY - MOBIL -->
+    <div class="mb-4">
+        <div class="d-flex justify-content-between align-items-center mb-3">
+            <h2 class="h5 mb-0 text-primary">📋 Kontrakty</h2>
+            <span class="badge bg-primary">{{ kontrakty.count }}</span>
+        </div>
+        
+        {% for kontrakt in kontrakty %}
+        <div class="card mb-3 shadow-sm border-start border-4 {% if kontrakt.datum_do < dnes and kontrakt.zostavajuce_mnozstvo > 0 %}border-danger{% elif kontrakt.datum_do < dnes|add:'days:7' %}border-warning{% else %}border-primary{% endif %}">
+            <div class="card-header bg-white d-flex justify-content-between align-items-center py-2">
+                <span class="fw-bold text-dark">#{{ kontrakt.cislo_kontraktu }}</span>
+                {% if kontrakt.zostavajuce_mnozstvo == 0 %}
+                    <span class="badge bg-success">Ukončený</span>
+                {% elif kontrakt.datum_do < dnes %}
+                    <span class="badge bg-danger">Expirovaný</span>
+                {% elif kontrakt.datum_do < dnes|add:'days:7' %}
+                    <span class="badge bg-warning text-dark">Končí čoskoro</span>
+                {% elif kontrakt.je_skladom %}
+                    <span class="badge bg-success">✓ Skladom</span>
+                {% else %}
+                    <span class="badge bg-primary">Aktívny</span>
+                {% endif %}
+            </div>
+            
+            <div class="card-body py-3">
+                <h6 class="card-title mb-2">{{ kontrakt.zakaznik }}</h6>
+                
+                <div class="mb-2">
+                    <span class="d-block fw-bold text-primary">{{ kontrakt.produkt.nazov }}</span>
+                    <small class="text-muted">{{ kontrakt.produkt.cislo_dielu }}</small>
+                </div>
+                
+                <!-- Progress bar -->
+                <div class="mb-2">
+                    <div class="d-flex justify-content-between mb-1">
+                        <small class="text-muted">Hotovo:</small>
+                        {% widthratio kontrakt.zostavajuce_mnozstvo kontrakt.pocet_kusov_celkovo -100 as percent %}
+                        <small class="fw-bold text-success">{{ percent|add:100 }}%</small>
+                    </div>
+                    <div class="progress" style="height: 20px;">
+                        <div class="progress-bar bg-success" role="progressbar" 
+                             style="width: {{ percent|add:100 }}%">
+                        </div>
+                    </div>
+                </div>
+                
+                <div class="row g-2 text-center border-top pt-2">
+                    <div class="col-4">
+                        <small class="text-muted d-block">Celkovo</small>
+                        <strong>{{ kontrakt.pocet_kusov_celkovo }} ks</strong>
+                    </div>
+                    <div class="col-4">
+                        <small class="text-muted d-block">Zostáva</small>
+                        <span class="badge bg-info text-dark">{{ kontrakt.zostavajuce_mnozstvo }} ks</span>
+                    </div>
+                    <div class="col-4">
+                        <small class="text-muted d-block">Platnosť</small>
+                        {% if kontrakt.datum_do < dnes and kontrakt.zostavajuce_mnozstvo > 0 %}
+                            <strong class="text-danger">⚠️ {{ kontrakt.datum_do|date:"d.m." }}</strong>
+                            <small class="d-block text-danger">Nie je ukončený</small>
+                        {% elif kontrakt.datum_do < dnes %}
+                            <strong class="text-muted">{{ kontrakt.datum_do|date:"d.m." }}</strong>
+                        {% elif kontrakt.datum_do < dnes|add:'days:7' %}
+                            <strong class="text-warning">⚠️ {{ kontrakt.datum_do|date:"d.m." }}</strong>
+                        {% else %}
+                            <strong>{{ kontrakt.datum_do|date:"d.m." }}</strong>
+                        {% endif %}
+                    </div>
+                </div>
+            </div>
+            
+            <div class="card-footer bg-light d-flex gap-2">
+                {% if perms.core.add_vyrobnadavka %}
+                    <a href="{% url 'vytvor_davku_z_kontraktu' kontrakt_pk=kontrakt.pk %}" 
+                       class="btn btn-success flex-grow-1">
+                        ➕ Vytvoriť dávku
+                    </a>
+                {% endif %}
+                {% if can_manage_contracts %}
+                    <a href="{% url 'upravit_kontrakt' kontrakt.pk %}" 
+                       class="btn btn-outline-primary">
+                        ✏️
+                    </a>
+                {% endif %}
+            </div>
+        </div>
+        {% empty %}
+        <div class="alert alert-info text-center">
+            <p class="mb-0">{% if search %}Žiadne kontrakty pre zadané vyhľadávanie{% else %}Žiadne aktívne kontrakty{% endif %}</p>
+        </div>
+        {% endfor %}
+    </div>
+
+    </div>
+    </div>
 </div>
+
+<script>
+(function () {
+  const tbody = document.getElementById('plan-kontrakty-tbody');
+  if (!tbody) return;
+  const sortRow = document.getElementById('plan-kontrakty-sort-row');
+  let sortCol = null;
+  let sortAsc = true;
+
+  sortRow.querySelectorAll('.sortable-th').forEach(function (th) {
+    th.addEventListener('click', function () {
+      const col = parseInt(th.dataset.col);
+      if (sortCol === col) {
+        sortAsc = !sortAsc;
+      } else {
+        sortCol = col;
+        sortAsc = true;
+      }
+
+      // Update icons
+      sortRow.querySelectorAll('.sortable-th').forEach(function (h) {
+        h.querySelector('.sort-icon').textContent = '⇅';
+        h.querySelector('.sort-icon').classList.add('text-muted');
+        h.querySelector('.sort-icon').classList.remove('text-dark');
+      });
+      th.querySelector('.sort-icon').textContent = sortAsc ? '▲' : '▼';
+      th.querySelector('.sort-icon').classList.remove('text-muted');
+      th.querySelector('.sort-icon').classList.add('text-dark');
+
+      const rows = Array.from(tbody.querySelectorAll('tr[class]'));
+      rows.sort(function (a, b) {
+        const tdA = a.querySelectorAll('td')[col];
+        const tdB = b.querySelectorAll('td')[col];
+        if (!tdA || !tdB) return 0;
+        const valA = (tdA.dataset.sort || '').trim();
+        const valB = (tdB.dataset.sort || '').trim();
+        const numA = parseFloat(valA);
+        const numB = parseFloat(valB);
+        let cmp;
+        if (!isNaN(numA) && !isNaN(numB)) {
+          cmp = numA - numB;
+        } else {
+          cmp = valA.localeCompare(valB, 'sk', {sensitivity: 'base'});
+        }
+        return sortAsc ? cmp : -cmp;
+      });
+      rows.forEach(function (row) { tbody.appendChild(row); });
+    });
+  });
+})();
+</script>
 
 {% endblock %}

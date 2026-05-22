@@ -1,39 +1,74 @@
-from django.urls import path
+﻿from django.urls import path
 from . import views
 
 urlpatterns = [
     path('', views.home, name='home'),
+    path('dochadzka/', views.attendance_kiosk, name='attendance_kiosk'),
+    path('dochadzka/manazersky-prehlad/', views.attendance_manager_overview, name='attendance_manager_overview'),
+    path('dochadzka/schvalovanie/', views.attendance_vacation_manager_page, name='attendance_vacation_manager_page'),
+    path('dochadzka/prehlad/', views.attendance_report, name='attendance_report'),
+    path('dochadzka/export-csv/', views.attendance_export_csv, name='attendance_export_csv'),
+    path('dochadzka/export-manager-pdf/', views.attendance_export_manager_pdf, name='attendance_export_manager_pdf'),
+    path('api/runtime-info/', views.runtime_info, name='runtime_info'),
+    path('healthz/', views.healthz, name='healthz'),
+    path('sprava/pouzivatelia/', views.admin_users_view, name='admin_users_view'),
+    path('sprava/skupiny/', views.admin_groups_view, name='admin_groups_view'),
+    path('sprava/opravnenia/', views.admin_permissions_view, name='admin_permissions_view'),
+    path('sprava/restart-server/', views.admin_restart_server, name='admin_restart_server'),
+    path('touch-login/', views.touch_login, name='touch_login'),
+    path('touch-pin-login/', views.touch_pin_login, name='touch_pin_login'),
     path('offline/', views.offline_page, name='offline_page'),
     path('produkty/', views.zoznam_produktov, name='zoznam_produktov'),
     path('produkt/<int:pk>/', views.detail_produkt, name='detail_produkt'),
     path('plan/', views.plan_vyroby, name='plan_vyroby'),
+    path('plan/odovzdanie/', views.plan_odovzdania_timeline, name='plan_odovzdania_timeline'),
     path('kvalita/', views.kvalita_dashboard, name='kvalita_dashboard'),
+    path('kvalita/kalibre/', views.kvalita_kalibre, name='kvalita_kalibre'),
     path('plan/export/', views.export_plan_excel, name='export_plan_excel'),
     path('zakazka/<int:pk>/', views.detail_zakazky, name='detail_zakazky'),
     path('stroje/', views.zoznam_strojov, name='zoznam_strojov'),
 
-    # WEB FORMULÁRE - Nové objednávky a kontrakty
+    # WEB FORMULARE - Nove objednavky a kontrakty
     path('objednavka/nova/', views.nova_objednavka, name='nova_objednavka'),
+    path('objednavka/import/hangsler-csv/', views.import_objednavok_hangsler_csv, name='import_objednavok_hangsler_csv'),
+    path('objednavka/import/mrp-pdf/', views.import_objednavok_mrp_pdf, name='import_objednavok_mrp_pdf'),
     path('objednavka/<int:pk>/upravit/', views.upravit_objednavku, name='upravit_objednavku'),
     path('kontrakt/novy/', views.novy_kontrakt, name='novy_kontrakt'),
     path('kontrakt/<int:pk>/upravit/', views.upravit_kontrakt, name='upravit_kontrakt'),
+    path('kontrakt/inicializacia-dodavok/', views.inicializacia_dodavok_kontraktov, name='inicializacia_dodavok_kontraktov'),
 
-    # SKLADY - NOVÉ
+    # SKLADY - NOVE
     path('sklad/', views.sklad_hotovych_dielov, name='sklad_hotovych_dielov'),
+    path('sklad/prvotna-inventura/', views.prvotna_inventura_hotovych_dielov, name='prvotna_inventura_hotovych_dielov'),
+    path('sklad/prvotna-inventura/<int:produkt_id>/zmenit/', views.prvotna_inventura_hotovych_dielov_zmenit, name='prvotna_inventura_hotovych_dielov_zmenit'),
+    path('sklad/prvotna-inventura/export-pdf/', views.export_prvotna_inventura_hotovych_dielov_pdf, name='export_prvotna_inventura_hotovych_dielov_pdf'),
+    path('sklad/prvotna-inventura/ulozit/', views.ulozit_prvotnu_inventuru_hotovych_dielov, name='ulozit_prvotnu_inventuru_hotovych_dielov'),
     path('sklad/material/', views.sklad_materialu, name='sklad_materialu'),
+    path('sklad/material/inventura/', views.inventura_materialu, name='inventura_materialu'),
+    path('sklad/material/inventura/<int:material_id>/zmenit/', views.inventura_materialu_zmenit, name='inventura_materialu_zmenit'),
+    path('sklad/material/inventura/export-excel/', views.export_inventura_historia_excel, name='export_inventura_historia_excel'),
+    path('sklad/material/inventura/export-pdf/', views.export_inventura_historia_pdf, name='export_inventura_historia_pdf'),
+    path('sklad/material/export-pdf/', views.export_material_inventory_pdf, name='export_material_inventory_pdf'),
 
-    # Výrobné dávky
+    # Vyrobne davky
     path('kontrakt/<int:kontrakt_pk>/vytvor-davku/', views.vytvor_davku_z_kontraktu, name='vytvor_davku_z_kontraktu'),
     path('davka/<int:davka_pk>/vytvor-objednavku/', views.vytvor_objednavku_z_davky, name='vytvor_objednavku_z_davky'),
 
-    # Operátorské URL
+    # Operatorske URL
     path('operator/', views.operator_dashboard, name='operator_dashboard'),
+    path('operator/avatar/', views.avatar_selector, name='avatar_selector'),
     path('operator/zakazka/<int:pk>/', views.operator_zakazka_detail, name='operator_zakazka_detail'),
     path('operator/zakazka/<int:pk>/operacie-fragment/', views.operator_operacie_fragment, name='operator_operacie_fragment'),
     path('operator/prevziat-zakazku/<int:pk>/', views.operator_prevziat_zakazku, name='operator_prevziat_zakazku'),
 
     # AJAX API
+    path('api/attendance/punch/', views.attendance_punch, name='attendance_punch'),
+    path('api/attendance/operator-session/', views.attendance_operator_session, name='attendance_operator_session'),
+    path('api/attendance/manual-punch/', views.attendance_manual_punch, name='attendance_manual_punch'),
+    path('api/attendance/vacation-request/', views.attendance_vacation_request, name='attendance_vacation_request'),
+    path('api/attendance/vacation-decision/<int:request_id>/', views.attendance_vacation_decide, name='attendance_vacation_decide'),
     path('api/operator/start/<int:objednavka_pk>/<int:operacia_pk>/', views.start_operation, name='start_operation'),
+    path('api/operator/add-operation-template/<int:objednavka_pk>/', views.operator_add_operation_template, name='operator_add_operation_template'),
     path('api/operator/takeover/<int:objednavka_pk>/<int:operacia_pk>/', views.take_over_operation, name='take_over_operation'),
     path('api/operator/pause/<int:objednavka_pk>/<int:operacia_pk>/', views.pause_operation, name='pause_operation'),
     path('api/operator/end-batch/<int:objednavka_pk>/<int:operacia_pk>/', views.end_batch, name='end_batch'),
@@ -42,16 +77,25 @@ urlpatterns = [
     path('api/operator/end-work/<int:pk>/', views.end_work, name='end_work'),
     path('api/operator/report-problem/<int:pk>/', views.report_problem, name='report_problem'),
     path('api/operator/kontrola-kvality/<int:pk>/', views.uloz_kontrolu_kvality, name='uloz_kontrolu_kvality'),
+    path('api/operator/avatar-select/', views.api_avatar_select, name='api_avatar_select'),
     path('api/material-ai/navrh/', views.ai_material_navrh, name='ai_material_navrh'),
     path('api/material-ai/navrh/<int:pk>/potvrdit/', views.ai_material_navrh_potvrdit, name='ai_material_navrh_potvrdit'),
     path('api/sprievodka/<int:pk>/', views.download_sprievodka, name='download_sprievodka'),
     path('api/sprievodka/davka/<int:pk>/', views.download_sprievodka_davka, name='download_sprievodka_davka'),
 
-    # Nové webové rozhrania
+    # Nove webove rozhrania
     path('stroj/novy/', views.novy_stroj, name='novy_stroj'),
     path('stroj/<int:pk>/upravit/', views.upravit_stroj, name='upravit_stroj'),
     path('produkt/novy/', views.novy_produkt, name='novy_produkt'),
     path('produkt/<int:pk>/upravit/', views.upravit_produkt, name='upravit_produkt'),
+    path('api/produkt/<int:pk>/vzorkovanie/upload/', views.upload_vzorkovanie, name='upload_vzorkovanie'),
+    path('api/produkt/<int:pk>/vzorkovanie/uloz/', views.uloz_vzorkovanie_meta, name='uloz_vzorkovanie_meta'),
+    path('api/produkt/<int:pk>/karta-etapa-a/uloz/', views.uloz_kartu_produktu_etapa_a, name='uloz_kartu_produktu_etapa_a'),
+    path('api/kalibre/uloz/', views.uloz_kaliber, name='uloz_kaliber'),
+    path('api/kalibre/<int:kaliber_id>/zmaz/', views.zmaz_kaliber, name='zmaz_kaliber'),
+    path('api/produkt/<int:pk>/vykres/upload/', views.upload_vykres, name='upload_vykres'),
+    path('api/produkt/<int:pk>/vykres/<int:doc_id>/delete/', views.delete_vykres, name='delete_vykres'),
+    path('api/produkt/<int:pk>/balenie/upload/', views.upload_balenie, name='upload_balenie'),
     path('material/novy/', views.novy_material, name='novy_material'),
     path('material/<int:pk>/upravit/', views.upravit_material, name='upravit_material'),
     path('sklad/novy/', views.novy_sklad_hotovych_dielov, name='novy_sklad_hotovych_dielov'),
@@ -72,3 +116,4 @@ urlpatterns = [
     path('api/docs/trash/', views.docs_trash_list, name='docs_trash_list'),
     path('api/docs/trash/restore/', views.docs_trash_restore, name='docs_trash_restore'),
 ]
+
